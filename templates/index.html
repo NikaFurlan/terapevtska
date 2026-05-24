@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAP – Terapevtske skupine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div id="app">
+  <nav class="sidebar">
+    <div class="logo">
+      <img src="/static/lap_logo.png" alt="LAP" class="logo-img">
+      <div class="logo-text-block">
+        <span class="logo-name">Lipovž Active<br>Program</span>
+        <span class="logo-sub">Terapevtske skupine</span>
+      </div>
+    </div>
+    <ul class="nav-links">
+      <li><a href="#" data-view="dashboard" class="active"><span class="nav-dot"></span> Nadzorna plošča</a></li>
+      <li><a href="#" data-view="groups"><span class="nav-dot"></span> Skupine</a></li>
+      <li><a href="#" data-view="members"><span class="nav-dot"></span> Člani</a></li>
+      <li><a href="#" data-view="attendance-nav"><span class="nav-dot"></span> Prisotnost</a></li>
+      <div class="nav-sep"></div>
+      <li><a href="#" data-view="report"><span class="nav-dot"></span> Mesečno poročilo</a></li>
+      <div class="nav-sep"></div>
+      <li><a href="#" data-view="settings"><span class="nav-dot"></span> Nastavitve</a></li>
+      <li id="nav-audit" style="display:none"><a href="#" data-view="audit"><span class="nav-dot"></span> Revizijska sled</a></li>
+    </ul>
+    <div class="sidebar-user">
+      <div class="sidebar-user-info">
+        <div class="sidebar-avatar" id="sidebar-avatar">A</div>
+        <div>
+          <div class="sidebar-username">{{ username }}</div>
+          <div class="sidebar-role">{{ 'Administrator' if role == 'admin' else 'Uporabnik' }}</div>
+        </div>
+      </div>
+      <div class="sidebar-user-actions">
+        <button class="sidebar-btn" onclick="showChangePassword()">🔑 Sprememba gesla</button>
+        {% if role == 'admin' %}<button class="sidebar-btn" onclick="showUserManagement()">👥 Upravljanje računov</button>{% endif %}
+        <button class="sidebar-btn" onclick="doLogout()">⇥ Odjava</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="view active">
+      <div class="page-header">
+        <div>
+          <h1 id="today-dayname">—</h1>
+          <p class="subtitle" id="today-date">—</p>
+        </div>
+        <div class="stats-row" id="dashboard-stats"></div>
+      </div>
+      <p class="section-label">Današnje skupine</p>
+      <div id="today-groups" class="cards-grid" style="margin-bottom:1.75rem"></div>
+      <p class="section-label">Vse skupine</p>
+      <div id="all-groups-dash" class="cards-grid"></div>
+    </section>
+
+    <!-- GROUPS -->
+    <section id="view-groups" class="view">
+      <div class="page-header">
+        <h1>Skupine</h1>
+        <button class="btn btn-primary" onclick="showGroupModal()">+ Nova skupina</button>
+      </div>
+      <div id="groups-list" class="cards-grid"></div>
+    </section>
+
+    <!-- MEMBERS -->
+    <section id="view-members" class="view">
+      <div class="page-header">
+        <h1>Člani</h1>
+        <button class="btn btn-primary" onclick="showMemberModal()">+ Nov član</button>
+      </div>
+      <div id="members-list" class="table-wrap"></div>
+    </section>
+
+    <!-- MEMBER DETAIL -->
+    <section id="view-member-detail" class="view">
+      <div class="page-header">
+        <div>
+          <button class="btn btn-ghost btn-sm" onclick="navigateTo('members')" style="margin-bottom:.5rem">← Nazaj</button>
+          <h1 id="member-detail-name">—</h1>
+          <p class="subtitle" id="member-detail-groups">—</p>
+        </div>
+        <button class="btn btn-secondary" id="member-detail-edit-btn">Uredi</button>
+      </div>
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchMemberTab('overview',this)">Pregled</button>
+        <button class="tab-btn" onclick="switchMemberTab('history',this)">Prisotnost</button>
+        <button class="tab-btn" onclick="switchMemberTab('payments',this)">Plačila</button>
+        <button class="tab-btn" onclick="switchMemberTab('contacts',this)">Kontakti</button>
+        <button class="tab-btn" onclick="switchMemberTab('pricing',this)">Mesečna cena</button>
+        <button class="tab-btn" onclick="switchMemberTab('discount',this)">Popust</button>
+      </div>
+      <div id="member-tab-overview" class="tab-panel active"></div>
+      <div id="member-tab-history" class="tab-panel"></div>
+      <div id="member-tab-payments" class="tab-panel"></div>
+      <div id="member-tab-contacts" class="tab-panel"></div>
+      <div id="member-tab-pricing" class="tab-panel"></div>
+      <div id="member-tab-discount" class="tab-panel"></div>
+    </section>
+
+    <!-- ATTENDANCE NAV -->
+    <section id="view-attendance-nav" class="view">
+      <div class="page-header"><h1>Prisotnost</h1></div>
+      <p class="section-label">Izberi skupino in datum</p>
+      <div id="att-nav-groups" class="cards-grid"></div>
+    </section>
+
+    <!-- ATTENDANCE -->
+    <section id="view-attendance" class="view">
+      <div class="page-header">
+        <div>
+          <button class="btn btn-ghost btn-sm" onclick="navigateTo('attendance-nav')" style="margin-bottom:.5rem">← Nazaj</button>
+          <h1 id="attendance-title">Prisotnost</h1>
+          <p class="subtitle" id="attendance-subtitle"></p>
+        </div>
+        <div style="display:flex;gap:.65rem;align-items:center">
+          <input type="date" id="attendance-date-picker" class="date-input" onchange="changeAttendanceDate()">
+          <button class="btn btn-primary" onclick="saveAttendance()">💾 Shrani</button>
+        </div>
+      </div>
+      <div id="attendance-list"></div>
+    </section>
+
+    <!-- MESEČNO POROČILO (billing + prisotnost + plačila v enem) -->
+    <section id="view-report" class="view">
+      <div class="page-header">
+        <div>
+          <h1>Mesečno poročilo</h1>
+          <p class="subtitle" id="report-subtitle"></p>
+        </div>
+        <div style="display:flex;gap:.65rem;align-items:center;flex-wrap:wrap">
+          <select id="report-month" class="select-input" onchange="loadReport()"></select>
+          <select id="report-year" class="select-input" onchange="loadReport()"></select>
+          <button class="btn btn-secondary" onclick="exportCSV()">↓ CSV</button>
+        </div>
+      </div>
+      <!-- Povzetek -->
+      <div id="report-summary" style="margin-bottom:1.25rem"></div>
+      <!-- Tabela -->
+      <div id="report-content"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+      <div class="page-header"><h1>Nastavitve</h1></div>
+      <div id="settings-content"></div>
+    </section>
+
+    <!-- AUDIT -->
+    <section id="view-audit" class="view">
+      <div class="page-header">
+        <h1>Revizijska sled</h1>
+        <button class="btn btn-secondary" onclick="loadAudit()">↺ Osveži</button>
+      </div>
+      <div id="audit-content"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- MODALS -->
+<div id="modal-overlay" class="modal-overlay" onclick="closeModal()"></div>
+
+<div id="modal-group" class="modal">
+  <div class="modal-header"><h2 id="modal-group-title">Nova skupina</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+  <div class="modal-body">
+    <input type="hidden" id="group-id">
+    <div class="form-group"><label>Ime</label><input type="text" id="group-name" class="form-input" placeholder="npr. Ponedeljek 08:00"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Dan</label>
+        <select id="group-day" class="form-input">
+          <option value="0">Ponedeljek</option><option value="1">Torek</option>
+          <option value="2">Sreda</option><option value="3">Četrtek</option>
+          <option value="4">Petek</option><option value="5">Sobota</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Ura</label><input type="time" id="group-time" class="form-input" value="08:00"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Cena na sejo (€)</label><input type="number" id="group-fee" class="form-input" value="30" step="0.5"></div>
+      <div class="form-group"><label>Seje / teden</label>
+        <select id="group-spw" class="form-input">
+          <option value="1">1× tedensko</option>
+          <option value="2">2× tedensko</option>
+          <option value="3">3× tedensko</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeModal()">Prekliči</button>
+    <button class="btn btn-primary" onclick="saveGroup()">Shrani</button>
+  </div>
+</div>
+
+<div id="modal-member" class="modal" style="max-width:580px">
+  <div class="modal-header"><h2 id="modal-member-title">Nov član</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+  <div class="modal-body">
+    <input type="hidden" id="member-id">
+    <div class="form-group"><label>Ime in priimek *</label><input type="text" id="member-name" class="form-input"></div>
+    <div class="form-row">
+      <div class="form-group"><label>E-pošta</label><input type="email" id="member-email" class="form-input"></div>
+      <div class="form-group"><label>Telefon</label><input type="tel" id="member-phone" class="form-input"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Datum rojstva</label><input type="date" id="member-dob" class="form-input"></div>
+      <div class="form-group"><label>Naslov / kraj</label><input type="text" id="member-address" class="form-input"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Kontaktna oseba (nujno)</label><input type="text" id="member-emcontact" class="form-input"></div>
+      <div class="form-group"><label>Tel. kontaktne osebe</label><input type="tel" id="member-emphone" class="form-input"></div>
+    </div>
+    <div class="form-group"><label>Opombe / zdravstvene posebnosti</label><input type="text" id="member-notes" class="form-input"></div>
+    <div class="form-group"><label>Status</label>
+      <select id="member-status" class="form-input">
+        <option value="active">Aktiven</option>
+        <option value="inactive">Neaktiven</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Skupine</label><div id="member-groups-check" class="checkbox-grid"></div></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeModal()">Prekliči</button>
+    <button class="btn btn-primary" onclick="saveMember()">Shrani</button>
+  </div>
+</div>
+
+<div id="modal-payment" class="modal">
+  <div class="modal-header"><h2>Vpiši plačilo</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+  <div class="modal-body">
+    <input type="hidden" id="pay-member-id">
+    <div class="form-group"><label>Član</label><input type="text" id="pay-member-name" class="form-input" readonly style="background:var(--surface2)"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Znesek (€)</label><input type="number" id="pay-amount" class="form-input" step="0.01" placeholder="0.00"></div>
+      <div class="form-group"><label>Datum plačila</label><input type="date" id="pay-date" class="form-input"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Način</label>
+        <select id="pay-method" class="form-input">
+          <option value="gotovina">Gotovina</option>
+          <option value="nakazilo">Nakazilo</option>
+          <option value="kartica">Kartica</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Mesec</label>
+        <select id="pay-month" class="form-input"></select>
+      </div>
+    </div>
+    <div class="form-group"><label>Leto</label><select id="pay-year" class="form-input" style="width:auto"></select></div>
+    <div class="form-group"><label>Opomba</label><input type="text" id="pay-notes" class="form-input" placeholder="neobvezno"></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeModal()">Prekliči</button>
+    <button class="btn btn-primary" onclick="savePayment()">Shrani plačilo</button>
+  </div>
+</div>
+
+<div id="modal-contact" class="modal">
+  <div class="modal-header"><h2>Beleženje kontakta</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+  <div class="modal-body">
+    <input type="hidden" id="contact-member-id">
+    <div class="form-row">
+      <div class="form-group"><label>Datum</label><input type="date" id="contact-date" class="form-input"></div>
+      <div class="form-group"><label>Vrsta</label>
+        <select id="contact-type" class="form-input">
+          <option value="klic">Klic</option>
+          <option value="sestanek">Sestanek</option>
+          <option value="email">E-pošta</option>
+          <option value="sms">SMS</option>
+          <option value="drugo">Drugo</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Vsebina / opomba *</label>
+      <input type="text" id="contact-notes" class="form-input" placeholder="O čem ste se pogovarjali...">
+    </div>
+    <div class="form-group"><label>Opomnik – naslednji kontakt</label>
+      <input type="date" id="contact-followup" class="form-input">
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeModal()">Prekliči</button>
+    <button class="btn btn-primary" onclick="saveContact()">Shrani</button>
+  </div>
+</div>
+
+<div id="modal-password" class="modal">
+  <div class="modal-header"><h2>Sprememba gesla</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+  <div class="modal-body">
+    <div class="error-box" id="pw-error"></div>
+    <div class="form-group"><label>Trenutno geslo</label><input type="password" id="pw-old" class="form-input"></div>
+    <div class="form-group"><label>Novo geslo</label><input type="password" id="pw-new" class="form-input" placeholder="vsaj 6 znakov"></div>
+    <div class="form-group"><label>Ponovi novo geslo</label><input type="password" id="pw-new2" class="form-input"></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeModal()">Prekliči</button>
+    <button class="btn btn-primary" onclick="saveNewPassword()">Shrani geslo</button>
+  </div>
+</div>
+
+<div id="modal-users" class="modal" style="max-width:600px">
+  <div class="modal-header"><h2>Upravljanje računov</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+  <div class="modal-body">
+    <p class="section-label">Obstoječi računi</p>
+    <div id="users-list-modal" style="margin-bottom:1.25rem"></div>
+    <hr style="border:none;border-top:1px solid var(--border);margin-bottom:1.1rem">
+    <p class="section-label">Nov račun</p>
+    <div class="error-box" id="reg-error"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Uporabniško ime</label><input type="text" id="reg-username" class="form-input"></div>
+      <div class="form-group"><label>E-pošta</label><input type="email" id="reg-email" class="form-input"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Geslo</label><input type="password" id="reg-password" class="form-input"></div>
+      <div class="form-group"><label>Vloga</label>
+        <select id="reg-role" class="form-input">
+          <option value="user">Uporabnik</option>
+          <option value="admin">Administrator</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeModal()">Zapri</button>
+    <button class="btn btn-primary" onclick="registerUser()">Ustvari račun</button>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

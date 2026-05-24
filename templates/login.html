@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prijava – LAP Terapevtske skupine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --teal: #2d7a6e;
+    --teal-light: #e8f4f2;
+    --border: #d8e2d4;
+    --text: #1a2820;
+    --text-2: #5a6e64;
+    --text-3: #8fa398;
+    --bg: #f5f7f4;
+    --surface: #ffffff;
+    --radius: 14px;
+    --shadow: 0 4px 32px rgba(45,122,110,.13);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .login-wrap {
+    width: 100%;
+    max-width: 400px;
+  }
+  .login-logo {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  .login-logo img {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    background: white;
+    border-radius: 16px;
+    padding: 8px;
+    box-shadow: var(--shadow);
+    margin-bottom: .75rem;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .login-logo h1 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: .8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--teal);
+    margin-bottom: .2rem;
+  }
+  .login-logo p {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.4rem;
+    color: var(--text);
+  }
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 2rem;
+    border: 1px solid var(--border);
+  }
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    gap: .25rem;
+  }
+  .tab {
+    flex: 1;
+    padding: .6rem;
+    text-align: center;
+    cursor: pointer;
+    font-size: .88rem;
+    font-weight: 600;
+    color: var(--text-3);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all .15s;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .form-group { margin-bottom: 1rem; }
+  .form-group label {
+    display: block;
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-2);
+    margin-bottom: .4rem;
+  }
+  .form-input {
+    width: 100%;
+    padding: .6rem .85rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .9rem;
+    color: var(--text);
+    background: var(--surface);
+    transition: border .15s;
+  }
+  .form-input:focus { outline: none; border-color: var(--teal); }
+  .btn {
+    width: 100%;
+    padding: .7rem;
+    background: var(--teal);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+    margin-top: .5rem;
+  }
+  .btn:hover { background: #25665c; }
+  .error {
+    background: #fdecea;
+    color: #c0392b;
+    padding: .6rem .85rem;
+    border-radius: 8px;
+    font-size: .85rem;
+    margin-bottom: 1rem;
+    display: none;
+  }
+  .error.show { display: block; }
+  .hint {
+    text-align: center;
+    font-size: .78rem;
+    color: var(--text-3);
+    margin-top: 1.25rem;
+  }
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-logo">
+    <img src="/static/lap_logo.png" alt="LAP">
+    <h1>Lipovž Active Program</h1>
+    <p>Vodenje terapevtskih skupin</p>
+  </div>
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('login')">Prijava</button>
+      <button class="tab" onclick="showTab('reset')">Pozabljeno geslo</button>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="panel-login" class="panel active">
+      <div class="error" id="login-error"></div>
+      <div class="form-group">
+        <label>Uporabniško ime</label>
+        <input type="text" id="login-username" class="form-input" placeholder="admin" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Geslo</label>
+        <input type="password" id="login-password" class="form-input" placeholder="••••••" autocomplete="current-password">
+      </div>
+      <button class="btn" onclick="doLogin()">Prijava</button>
+      <p class="hint">Privzeti račun: <strong>admin</strong> / <strong>admin123</strong></p>
+    </div>
+
+    <!-- RESET INFO -->
+    <div id="panel-reset" class="panel">
+      <p style="color:var(--text-2);font-size:.9rem;line-height:1.6;margin-bottom:1rem">
+        Za ponastavitev gesla se obrnite na administratorja sistema.<br><br>
+        Geslo je mogoče spremeniti po prijavi v razdelku <strong>Nastavitve → Moj račun</strong>.
+      </p>
+      <button class="btn" onclick="showTab('login')" style="background:var(--teal-light);color:var(--teal)">← Nazaj na prijavo</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['login','reset'][i] === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.classList.remove('show');
+  const r = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username, password})
+  });
+  const data = await r.json();
+  if (data.ok) {
+    window.location.href = '/';
+  } else {
+    errEl.textContent = data.error || 'Napaka pri prijavi.';
+    errEl.classList.add('show');
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+</script>
+</body>
+</html>

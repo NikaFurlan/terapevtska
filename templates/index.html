@@ -9,6 +9,18 @@
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+<!-- Mobilni topbar -->
+<div class="mobile-topbar">
+  <div class="mobile-logo">
+    <img src="/static/lap_logo.png" alt="LAP">
+    <span>LAP Terapevtske</span>
+  </div>
+  <button class="mobile-menu-btn" onclick="toggleMobileMenu()" id="mobile-menu-btn">☰</button>
+</div>
+
+<!-- Overlay za zapiranje menija -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeMobileMenu()"></div>
+
 <div id="app">
   <nav class="sidebar">
     <div class="logo">

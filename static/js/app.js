@@ -944,6 +944,28 @@ async function loadAudit() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
+// ── Mobile menu ───────────────────────────────────────────────────────────
+function toggleMobileMenu() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  const btn = document.getElementById('mobile-menu-btn');
+  const isOpen = sidebar.classList.toggle('open');
+  overlay.classList.toggle('open', isOpen);
+  btn.textContent = isOpen ? '✕' : '☰';
+}
+function closeMobileMenu() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+  document.getElementById('mobile-menu-btn').textContent = '☰';
+}
+
+// Zapri meni po navigaciji na mobilu
+document.querySelectorAll('.nav-links a').forEach(a => {
+  a.addEventListener('click', () => {
+    if (window.innerWidth <= 768) closeMobileMenu();
+  });
+});
+
 fetch('/api/auth/me').then(r=>r.json()).then(me=>{
   if(me.role==='admin') document.getElementById('nav-audit').style.display='';
 });

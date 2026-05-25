@@ -404,3 +404,151 @@ tbody tr:last-child { border-bottom: none; }
 .tab-btn.active { color: var(--green); border-bottom-color: var(--green); }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESPONSIVE / MOBILE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Mobile top bar (skrit na desktopu) ─────────────────────────────────── */
+.mobile-topbar {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 90;
+  background: var(--sidebar-bg);
+  height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.mobile-topbar .mobile-logo {
+  display: flex; align-items: center; gap: .55rem;
+}
+.mobile-topbar .mobile-logo img {
+  width: 30px; height: 30px; object-fit: contain;
+  background: #fff; border-radius: 4px; padding: 2px;
+}
+.mobile-topbar .mobile-logo span {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: #fff;
+}
+.mobile-menu-btn {
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,.8); font-size: 1.3rem;
+  padding: .4rem; line-height: 1;
+}
+
+/* Overlay za zapiranje menija na mobilu */
+.sidebar-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.5); z-index: 95;
+}
+.sidebar-overlay.open { display: block; }
+
+/* ── Tablet (do 1024px) ──────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .content { padding: 1.5rem 1.5rem; }
+  .detail-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Mobilni (do 768px) ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Pokaži mobilni topbar */
+  .mobile-topbar { display: flex; }
+
+  /* Sidebar postane drawer */
+  .sidebar {
+    position: fixed; top: 0; left: -260px; z-index: 96;
+    width: 260px; height: 100vh;
+    transition: left .25s ease;
+    padding-top: 1.25rem;
+    overflow-y: auto;
+  }
+  .sidebar.open { left: 0; }
+
+  /* Content se začne pod topbarom */
+  .content {
+    padding: 1rem;
+    padding-top: calc(54px + 1rem);
+    width: 100%;
+  }
+
+  /* Page header — stack vertically */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .75rem;
+    margin-bottom: 1.25rem;
+  }
+  .page-header h1 { font-size: 1.5rem; }
+  .page-header > div:last-child {
+    display: flex; flex-wrap: wrap; gap: .5rem;
+  }
+
+  /* Kartice — 1 stolpec */
+  .cards-grid { grid-template-columns: 1fr; }
+
+  /* Stats row — scroll horizontally */
+  .stats-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: .25rem; }
+  .stat-card { min-width: 90px; flex-shrink: 0; padding: .75rem .85rem; }
+  .stat-num { font-size: 1.5rem; }
+
+  /* Detail grid — 1 stolpec */
+  .detail-grid { grid-template-columns: 1fr; }
+
+  /* Tab bar — scroll horizontally */
+  .tab-bar { overflow-x: auto; flex-wrap: nowrap; }
+  .tab-btn { white-space: nowrap; padding: .5rem .75rem; font-size: .75rem; }
+
+  /* Attendance */
+  .att-name { min-width: unset; width: 100%; margin-bottom: .35rem; }
+  .attendance-row-top { flex-direction: column; align-items: flex-start; }
+  .att-status-group { width: 100%; }
+  .att-btn { flex: 1; text-align: center; font-size: .72rem; padding: .4rem .5rem; }
+
+  /* Tabele — horizontalni scroll */
+  .table-wrap { border-radius: var(--radius-sm); }
+  tbody td { padding: .6rem .75rem; font-size: .82rem; }
+  thead th { padding: .55rem .75rem; }
+
+  /* Forme */
+  .form-row { grid-template-columns: 1fr; }
+  .form-row-3 { grid-template-columns: 1fr; }
+
+  /* Modali — full screen na mobilu */
+  .modal {
+    top: auto; bottom: 0; left: 0;
+    transform: none;
+    width: 100%; max-width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 92vh;
+  }
+
+  /* Gumbi v page header — full width */
+  .page-header .btn { width: 100%; justify-content: center; }
+
+  /* Report tabela — skrijemo manj pomembne stolpce */
+  .report-table th:nth-child(3),
+  .report-table td:nth-child(3),
+  .report-table th:nth-child(4),
+  .report-table td:nth-child(4) { display: none; }
+
+  /* Members tabela — skrijemo manj pomembne stolpce */
+  table thead th:nth-child(3),
+  table tbody td:nth-child(3) { display: none; }
+
+  /* Toast — spodaj na sredini */
+  .toast { right: 1rem; left: 1rem; text-align: center; }
+
+  /* Buttons row v group card */
+  .group-card > div:last-child { flex-wrap: wrap; }
+}
+
+/* ── Majhni mobilni (do 480px) ───────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .content { padding: .75rem; padding-top: calc(54px + .75rem); }
+  .page-header h1 { font-size: 1.3rem; }
+  .att-btn { font-size: .68rem; padding: .38rem .35rem; }
+  .btn { font-size: .8rem; padding: .45rem .9rem; }
+  .stat-card { min-width: 80px; }
+}

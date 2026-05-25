@@ -133,7 +133,7 @@
           <h1 id="attendance-title">Prisotnost</h1>
           <p class="subtitle" id="attendance-subtitle"></p>
         </div>
-        <div style="display:flex;gap:.65rem;align-items:center">
+        <div class="att-header-actions">
           <input type="date" id="attendance-date-picker" class="date-input" onchange="changeAttendanceDate()">
           <button class="btn btn-primary" onclick="saveAttendance()">💾 Shrani</button>
         </div>
@@ -217,7 +217,7 @@
   <div class="modal-header"><h2 id="modal-member-title">Nov član</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
   <div class="modal-body">
     <input type="hidden" id="member-id">
-    <div class="form-group"><label>Ime in priimek *</label><input type="text" id="member-name" class="form-input"></div>
+    <div class="form-group"><label>Ime in priimek *</label><input type="text" id="member-name" class="form-input" autocapitalize="words" autocorrect="off"></div>
     <div class="form-row">
       <div class="form-group"><label>E-pošta</label><input type="email" id="member-email" class="form-input"></div>
       <div class="form-group"><label>Telefon</label><input type="tel" id="member-phone" class="form-input"></div>
@@ -345,6 +345,30 @@
     <button class="btn btn-primary" onclick="registerUser()">Ustvari račun</button>
   </div>
 </div>
+
+<!-- Mobile bottom navigation -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="bottom-nav-item active" onclick="navigateTo('dashboard')" data-nav="dashboard">
+    <span class="bottom-nav-icon">◎</span>
+    <span class="bottom-nav-label">Danes</span>
+  </button>
+  <button class="bottom-nav-item" onclick="navigateTo('attendance-nav')" data-nav="attendance-nav">
+    <span class="bottom-nav-icon">✓</span>
+    <span class="bottom-nav-label">Prisotnost</span>
+  </button>
+  <button class="bottom-nav-item" onclick="navigateTo('members')" data-nav="members">
+    <span class="bottom-nav-icon">○</span>
+    <span class="bottom-nav-label">Člani</span>
+  </button>
+  <button class="bottom-nav-item" onclick="navigateTo('report')" data-nav="report">
+    <span class="bottom-nav-icon">€</span>
+    <span class="bottom-nav-label">Poročilo</span>
+  </button>
+  <button class="bottom-nav-item" onclick="navigateTo('settings')" data-nav="settings">
+    <span class="bottom-nav-icon">⚙</span>
+    <span class="bottom-nav-label">Več</span>
+  </button>
+</nav>
 
 <script src="/static/js/app.js"></script>
 </body>

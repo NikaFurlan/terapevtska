@@ -118,6 +118,11 @@
     background: var(--surface);
     transition: border .15s;
   }
+  @media (max-width: 768px) {
+    /* Prevent iOS zoom on input focus */
+    .form-input { font-size: 16px; }
+    .btn { min-height: 48px; font-size: 1rem; }
+  }
   .form-input:focus { outline: none; border-color: var(--teal); }
   .btn {
     width: 100%;
@@ -176,7 +181,7 @@
       <div class="error" id="login-error"></div>
       <div class="form-group">
         <label>Uporabniško ime</label>
-        <input type="text" id="login-username" class="form-input" placeholder="admin" autocomplete="username">
+        <input type="text" id="login-username" class="form-input" placeholder="admin" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
       </div>
       <div class="form-group">
         <label>Geslo</label>

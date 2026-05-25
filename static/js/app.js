@@ -25,11 +25,19 @@ function openModal(id) { document.getElementById('modal-overlay').classList.add(
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); document.querySelectorAll('.modal').forEach(m=>m.classList.remove('open')); }
 
 // ── Navigation ────────────────────────────────────────────────────────────
+const BOTTOM_NAV_MAP = {
+  'dashboard':'dashboard','groups':'settings','members':'members',
+  'member-detail':'members','attendance-nav':'attendance-nav',
+  'attendance':'attendance-nav','report':'report',
+  'settings':'settings','audit':'settings'
+};
 function navigateTo(view) {
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   const el = document.getElementById(`view-${view}`);
   if (el) el.classList.add('active');
   document.querySelectorAll('.nav-links a').forEach(a=>a.classList.toggle('active', a.dataset.view===view));
+  const navTarget = BOTTOM_NAV_MAP[view] || null;
+  document.querySelectorAll('.bottom-nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===navTarget));
   if (view==='dashboard') loadDashboard();
   else if (view==='groups') loadGroups();
   else if (view==='members') loadMembers();
@@ -130,6 +138,10 @@ async function loadMembers() {
   const members = await api('/api/members'); state.members = members;
   const el = document.getElementById('members-list');
   if (!members.length) { el.innerHTML='<p class="empty-state"><span class="empty-icon">◉</span>Ni članov.</p>'; return; }
+  if (window.innerWidth <= 768) {
+    el.innerHTML = renderMembersMobile(members);
+    return;
+  }
   el.innerHTML = `<table>
     <thead><tr><th>Ime</th><th>Kontakt</th><th>Skupine</th><th>Ta mesec</th><th>Plačano</th><th>Status</th><th></th></tr></thead>
     <tbody>${members.map(m => {
@@ -149,6 +161,36 @@ async function loadMembers() {
         </td>
       </tr>`;
     }).join('')}</tbody></table>`;
+}
+
+function renderMembersMobile(members) {
+  return members.map(m => {
+    const groups = (m.groups||[]).map(g=>`<span class="badge badge-teal" style="font-size:.64rem">${g.name}</span>`).join('');
+    const paidColor = m.paid_this_month > 0 ? 'var(--green)' : 'var(--text-3)';
+    return `<div class="member-card-mobile" onclick="showMemberDetail('${m.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:.97rem;margin-bottom:.2rem">${m.name}</div>
+          ${m.phone?`<div style="font-size:.82rem;color:var(--text-2)">📞 ${m.phone}</div>`:''}
+          ${m.email?`<div style="font-size:.78rem;color:var(--text-3)">✉ ${m.email}</div>`:''}
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:.95rem;color:${paidColor}">€ ${m.paid_this_month.toFixed(2)}</div>
+          <div style="font-size:.68rem;color:var(--text-3);margin-bottom:.2rem">ta mesec</div>
+          <span class="badge ${m.status==='active'?'badge-green':'badge-gray'}">${m.status==='active'?'Aktiven':'Neaktiven'}</span>
+        </div>
+      </div>
+      ${groups?`<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.4rem">${groups}</div>`:''}
+      <div style="display:flex;gap:.3rem;align-items:center;margin-top:.5rem">
+        <div style="flex:1;display:flex;gap:.3rem;flex-wrap:wrap">
+          <span class="badge badge-green">✓ ${m.month_attended}</span>
+          ${m.month_excused>0?`<span class="badge badge-amber">○ ${m.month_excused}</span>`:''}
+          ${m.month_unexcused>0?`<span class="badge badge-red">✗ ${m.month_unexcused}</span>`:''}
+        </div>
+        <button class="btn btn-ghost btn-sm" style="min-height:34px;font-size:.75rem" onclick="showMemberModal('${m.id}');event.stopPropagation()">Uredi</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 async function deleteMember(mid, name) {
   if (!confirm(`Odstrani člana "${name}"?\nIzbrisani bodo vsi zapisi prisotnosti, plačil in kontaktov.`)) return;
@@ -530,22 +572,20 @@ async function openSessionHistory(gid) {
     </div>
     <div style="display:flex;flex-direction:column;gap:.45rem">
     ${sessions.map(s=>`
-      <div style="display:flex;align-items:center;gap:1rem;padding:.75rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s"
-        onclick="openAttendance('${gid}','${s.date}')"
-        onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'">
-        <div style="font-size:1.1rem;width:1.5rem;text-align:center">${statusDot(s)}</div>
-        <div style="min-width:110px">
+      <div class="session-history-row" onclick="openAttendance('${gid}','${s.date}')">
+        <div style="font-size:1.1rem;width:1.5rem;text-align:center;flex-shrink:0">${statusDot(s)}</div>
+        <div style="min-width:100px;flex-shrink:0">
           <strong style="color:${s.is_today?'var(--green)':s.is_future?'var(--text-3)':'var(--text)'}">${s.date_fmt}</strong>
           ${s.is_today?'<span class="badge badge-green" style="margin-left:.4rem">danes</span>':''}
           ${s.is_future?'<span class="badge badge-gray" style="margin-left:.4rem">prihodnji</span>':''}
           ${s.cancelled?'<span class="badge badge-red" style="margin-left:.4rem">odpovedan</span>':''}
         </div>
-        <div style="color:var(--text-3);font-size:.82rem">${s.weekday}</div>
+        <div style="color:var(--text-3);font-size:.82rem;flex-shrink:0">${s.weekday}</div>
         <div style="flex:1;font-size:.82rem;color:var(--text-2)">
           ${s.has_attendance?`<span style="color:var(--green)">✓ ${s.attendance_present}/${s.attendance_total} vpisanih</span>`:'<span style="color:var(--amber)">Brez vpisa</span>'}
         </div>
         ${s.notes?`<div style="font-size:.78rem;color:var(--text-3);font-style:italic">${s.notes}</div>`:''}
-        <div style="display:flex;gap:.4rem">
+        <div class="session-history-actions" style="display:flex;gap:.4rem;flex-shrink:0">
           <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openAttendance('${gid}','${s.date}')">Uredi</button>
           <button class="btn btn-${s.cancelled?'amber':'danger'} btn-sm" onclick="event.stopPropagation();toggleCancelSession('${gid}','${s.date}',${s.cancelled?0:1})">${s.cancelled?'Obnovi':'Odpovej'}</button>
         </div>

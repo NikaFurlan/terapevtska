@@ -578,8 +578,7 @@ tbody tr:last-child { border-bottom: none; }
 }
 .session-history-row:hover { border-color: var(--green); }
 
-/* ── Bottom navigation (mobile only) ────────────────────────────────────── */
-.bottom-nav { display: none; }
+/* bottom-nav removed */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MOBILE ADDITIONS — supplementary rules
@@ -599,32 +598,6 @@ tbody tr:last-child { border-bottom: none; }
   .btn-sm { min-height: 36px; }
   .att-btn { min-height: 42px; }
 
-  /* Bottom navigation */
-  .bottom-nav {
-    display: flex;
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 92;
-    background: var(--sidebar-bg);
-    border-top: 1px solid rgba(255,255,255,.08);
-    height: 56px;
-  }
-  .bottom-nav-item {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 2px;
-    background: none; border: none; cursor: pointer;
-    color: rgba(255,255,255,.38); transition: color .15s;
-    font-family: 'Outfit', sans-serif; padding: 4px 2px 6px;
-    min-height: 56px; -webkit-tap-highlight-color: transparent;
-  }
-  .bottom-nav-item.active { color: var(--green-mid); }
-  .bottom-nav-item:active { color: rgba(255,255,255,.7); }
-  .bottom-nav-icon { font-size: 1.15rem; line-height: 1.2; }
-  .bottom-nav-label {
-    font-size: .57rem; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .04em; line-height: 1;
-  }
-
-  /* Add bottom padding for bottom nav */
-  .content { padding-bottom: calc(56px + 1rem); }
 
   /* Attendance header — stack date picker and save */
   .att-header-actions { flex-direction: column; align-items: stretch; width: 100%; }
@@ -645,7 +618,3 @@ tbody tr:last-child { border-bottom: none; }
   .session-history-actions { width: 100%; justify-content: flex-end; margin-top: .25rem; }
 }
 
-@media (max-width: 480px) {
-  .content { padding-bottom: calc(56px + .75rem); }
-  .bottom-nav-label { font-size: .52rem; letter-spacing: .02em; }
-}

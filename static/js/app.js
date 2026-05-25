@@ -25,19 +25,11 @@ function openModal(id) { document.getElementById('modal-overlay').classList.add(
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); document.querySelectorAll('.modal').forEach(m=>m.classList.remove('open')); }
 
 // ── Navigation ────────────────────────────────────────────────────────────
-const BOTTOM_NAV_MAP = {
-  'dashboard':'dashboard','groups':'settings','members':'members',
-  'member-detail':'members','attendance-nav':'attendance-nav',
-  'attendance':'attendance-nav','report':'report',
-  'settings':'settings','audit':'settings'
-};
 function navigateTo(view) {
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   const el = document.getElementById(`view-${view}`);
   if (el) el.classList.add('active');
   document.querySelectorAll('.nav-links a').forEach(a=>a.classList.toggle('active', a.dataset.view===view));
-  const navTarget = BOTTOM_NAV_MAP[view] || null;
-  document.querySelectorAll('.bottom-nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===navTarget));
   if (view==='dashboard') loadDashboard();
   else if (view==='groups') loadGroups();
   else if (view==='members') loadMembers();

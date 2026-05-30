@@ -897,8 +897,13 @@ def delete_contact(cid):
 def billing_overview(year, month):
     conn = get_db()
     discount_pct    = float(get_setting(conn,'discount_percent','20')) / 100
-    discount_days   = int(get_setting(conn,'discount_days','7'))       # ≤ this → no discount
-    discount_days_max = int(get_setting(conn,'discount_days_max','14'))# > this → individual
+    discount_days   = int(get_setting(conn,'discount_days','7'))
+    discount_days_max = int(get_setting(conn,'discount_days_max','14'))
+    tier_rows = {r['key']: float(r['value']) for r in conn.execute(
+        "SELECT key,value FROM settings WHERE key IN ('tier_price_1','tier_price_2','tier_price_3','tier_price_4plus')"
+    ).fetchall()}
+    tier_prices = [tier_rows.get('tier_price_1',40.0), tier_rows.get('tier_price_2',70.0),
+                   tier_rows.get('tier_price_3',90.0), tier_rows.get('tier_price_4plus',110.0)]
     month_str = f"{year:04d}-{month:02d}"
     members = [dict(r) for r in conn.execute("SELECT * FROM members WHERE status='active' ORDER BY name").fetchall()]
     result = []
@@ -910,7 +915,7 @@ def billing_overview(year, month):
             result.append({'member_id':m['id'],'name':m['name'],'scheduled':0,'attended':0,
                 'excused':0,'unexcused':0,'excused_days':0,'monthly_price':0,
                 'base_amount':0,'discount_amount':0,'amount_due':0,'paid':0,'balance':0,
-                'pricing_type':'none','next_month_rec':None,
+                'visits_per_week':0,'next_month_rec':None,
                 'member_discount_amount':0,'member_discount_label':None})
             continue
         attended = sum(1 for r in rows if r['status'] in ('present','makeup'))
@@ -940,21 +945,16 @@ def billing_overview(year, month):
             absence_discount_pct = 0.0
             next_month_rec = f"Individualni popust ({total_excused_days} dni) — nastavi ročno"
 
-        # Calculate base price
-        group_ids = list({r['grp_id'] for r in rows})
-        monthly_price = 0; pricing_type = 'per_session'
-        for gid in group_ids:
-            mp, vpw = get_member_price(conn, m['id'], gid, f"{year:04d}-{month:02d}-01")
-            if mp > 0:
-                monthly_price += mp; pricing_type = 'monthly'
-        if pricing_type == 'monthly':
-            base = monthly_price
-            discount = round(base * absence_discount_pct, 2)
-        else:
-            fee = rows[0]['fee_per_session'] if rows else 0
-            base = attended * fee
-            monthly_price = base
-            discount = round(base * absence_discount_pct, 2)
+        # Base price: tier pricing based on total sessions/week (same as members list)
+        unique_groups = {}
+        for r in rows:
+            if r['grp_id'] not in unique_groups:
+                unique_groups[r['grp_id']] = r['sessions_per_week'] or 1
+        total_spw = sum(unique_groups.values())
+        idx = min(total_spw, 4) - 1 if total_spw > 0 else -1
+        monthly_price = tier_prices[idx] if idx >= 0 else 0
+        base = monthly_price
+        discount = round(base * absence_discount_pct, 2)
         amount_due = base - discount
 
         # Individual member discount (popust)
@@ -980,7 +980,7 @@ def billing_overview(year, month):
             'base_amount':round(base,2),'discount_amount':round(discount,2),
             'member_discount_amount':member_discount_amount,'member_discount_label':member_discount_label,
             'amount_due':round(amount_due,2),'paid':round(paid,2),
-            'balance':round(amount_due-paid,2),'pricing_type':pricing_type,
+            'balance':round(amount_due-paid,2),'visits_per_week':total_spw,
             'next_month_rec':next_month_rec
         })
     conn.close(); return jsonify(result)
@@ -992,7 +992,7 @@ def billing_csv(year, month):
     si = io.StringIO(); w = csv.writer(si, delimiter=';')
     w.writerow(['Ime','Tip cene','Načrt.','Prisoten','Op.','Neop.','Osnova €','Pop. odsotnost €','Pop. član €','Dolguje €','Plačano €','Razlika €'])
     for r in data:
-        w.writerow([r['name'],r['pricing_type'],r['scheduled'],r['attended'],r['excused'],r['unexcused'],
+        w.writerow([r['name'],f"{r.get('visits_per_week',0)}x/teden",r['scheduled'],r['attended'],r['excused'],r['unexcused'],
             f"{r['base_amount']:.2f}",f"{r['discount_amount']:.2f}",
             f"{r['member_discount_amount']:.2f}",
             f"{r['amount_due']:.2f}",f"{r['paid']:.2f}",f"{r['balance']:.2f}"])

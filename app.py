@@ -251,11 +251,11 @@ def init_db():
 def seed_data(c):
     today = date.today()
     groups = [
-        (str(uuid.uuid4()), 'Ponedeljek 08:00', 0, '08:00', 30.0, 1, None, 'system', None),
-        (str(uuid.uuid4()), 'Sreda 10:00', 2, '10:00', 30.0, 1, None, 'system', None),
-        (str(uuid.uuid4()), 'Petek 09:00', 4, '09:00', 30.0, 1, None, 'system', None),
+        (str(uuid.uuid4()), 'Ponedeljek 08:00', 0, '08:00', 30.0, 1, None, 'system', None, 12),
+        (str(uuid.uuid4()), 'Sreda 10:00', 2, '10:00', 30.0, 1, None, 'system', None, 12),
+        (str(uuid.uuid4()), 'Petek 09:00', 4, '09:00', 30.0, 1, None, 'system', None, 12),
     ]
-    c.executemany("INSERT INTO groups VALUES (?,?,?,?,?,?,?,?,?)", groups)
+    c.executemany("INSERT INTO groups VALUES (?,?,?,?,?,?,?,?,?,?)", groups)
     members = [
         (str(uuid.uuid4()), 'Ana Novak', 'ana@example.com', '041 111 222', 'Ljubljana', '1985-03-12', 'Marko Novak', '040 999 111', '', 'active', '2026-01-10', 'system', None, None),
         (str(uuid.uuid4()), 'Janez Kranjc', None, '040 333 444', 'Maribor', '1978-07-24', None, None, '', 'active', '2026-01-15', 'system', None, None),

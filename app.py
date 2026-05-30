@@ -629,6 +629,13 @@ def get_members():
         GROUP BY member_id""", ids + [date.today().year, date.today().month]).fetchall()
     paid_map = {r['member_id']: r['t'] for r in paid_rows}
 
+    today_iso = date.today().isoformat()
+    disc_rows = conn.execute(f"""
+        SELECT member_id, discount_type, discount_value FROM member_discount
+        WHERE member_id IN ({ph}) AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)""",
+        ids + [today_iso, today_iso]).fetchall()
+    disc_map = {r['member_id']: r for r in disc_rows}
+
     for m in members:
         mid = m['id']
         m['groups'] = groups_map.get(mid, [])
@@ -640,7 +647,14 @@ def get_members():
         m['paid_this_month'] = paid_map.get(mid, 0)
         total_visits = sum(g.get('sessions_per_week', 1) for g in m['groups'])
         idx = min(total_visits, 4) - 1 if total_visits > 0 else -1
-        m['expected_monthly'] = tier_prices[idx] if idx >= 0 else 0
+        gross = tier_prices[idx] if idx >= 0 else 0
+        d = disc_map.get(mid)
+        if d and gross > 0:
+            if d['discount_type'] == 'percent':
+                gross = round(gross * (1 - float(d['discount_value']) / 100), 2)
+            else:
+                gross = round(max(0.0, gross - float(d['discount_value'])), 2)
+        m['expected_monthly'] = gross
     conn.close(); return jsonify(members)
 
 @app.route('/api/members', methods=['POST'])
@@ -983,10 +997,11 @@ def billing_overview(year, month):
         amount_due = base - discount
 
         # Individual member discount (popust)
-        today_str = f"{year:04d}-{month:02d}-01"
+        first_day = f"{year:04d}-{month:02d}-01"
+        last_day  = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
         member_disc = conn.execute("""SELECT * FROM member_discount WHERE member_id=?
             AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)""",
-            (m['id'], today_str, today_str)).fetchone()
+            (m['id'], last_day, first_day)).fetchone()
         member_discount_amount = 0.0; member_discount_label = None
         if member_disc:
             if member_disc['discount_type'] == 'percent':

@@ -988,19 +988,8 @@ async function showPaymentModal(mid, name) {
   if (!state.members.length) state.members = await api('/api/members');
   const m = state.members.find(x=>x.id===mid);
   if (!name) name = m ? m.name : '—';
-  // Default = tier price (expected_monthly) minus active individual discount
+  // expected_monthly already has individual discount applied by the backend
   let amount = m ? (m.expected_monthly || 0) : 0;
-  if (amount > 0) {
-    const disc = await api(`/api/members/${mid}/discount`);
-    if (disc) {
-      const today = todayISO();
-      if (disc.valid_from <= today && (!disc.valid_to || disc.valid_to >= today)) {
-        amount = disc.discount_type === 'percent'
-          ? Math.round(amount * (1 - disc.discount_value / 100) * 100) / 100
-          : Math.max(0, amount - disc.discount_value);
-      }
-    }
-  }
   document.getElementById('pay-member-id').value = mid;
   document.getElementById('pay-member-name').value = name;
   document.getElementById('pay-date').value = todayISO();

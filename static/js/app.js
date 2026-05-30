@@ -1,6 +1,6 @@
 // ── State ─────────────────────────────────────────────────────────────────
 const state = { groups: [], members: [], currentGroupId: null, currentDate: null, attendanceData: {}, currentMemberId: null };
-const MONTHS_SL = ['Januar','Februar','Marec','April','Maj','Junij','Julij','Avgust','September','Oktober','November','December'];
+const MONTHS_SL = ['januar','februar','marec','april','maj','junij','julij','avgust','september','oktober','november','december'];
 const DAYS_SL = ['Ponedeljek','Torek','Sreda','Četrtek','Petek','Sobota','Nedelja'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -130,6 +130,10 @@ async function deleteGroup(id) {
 // ── Members ───────────────────────────────────────────────────────────────
 async function loadMembers() {
   const members = await api('/api/members'); state.members = members;
+  renderMembersList(members);
+}
+
+function renderMembersList(members) {
   const el = document.getElementById('members-list');
   if (!members.length) { el.innerHTML='<p class="empty-state"><span class="empty-icon">◉</span>Ni članov.</p>'; return; }
   if (window.innerWidth <= 1024) {
@@ -155,6 +159,25 @@ async function loadMembers() {
         </td>
       </tr>`;
     }).join('')}</tbody></table>`;
+}
+
+// Silently refresh member state after any mutation and update all visible views
+async function refreshMemberState(mid) {
+  state.members = await api('/api/members');
+  if (document.getElementById('view-members').classList.contains('active')) {
+    renderMembersList(state.members);
+  }
+  if (mid && state.currentMemberId === mid &&
+      document.getElementById('view-member-detail').classList.contains('active')) {
+    const m = state.members.find(x => x.id === mid);
+    if (m) {
+      document.getElementById('member-detail-name').textContent = m.name;
+      await loadMemberOverview(m);
+    }
+  }
+  if (document.getElementById('view-dashboard').classList.contains('active')) {
+    loadDashboard();
+  }
 }
 
 function renderMembersMobile(members) {
@@ -255,8 +278,7 @@ async function saveMember() {
     if (id) await api(`/api/members/${id}`,'PUT',data); else await api('/api/members','POST',data);
     closeModal();
     showToast('Član shranjen.');
-    loadMembers();
-    if (document.getElementById('view-dashboard').classList.contains('active')) loadDashboard();
+    refreshMemberState(id);
   } catch(e) { showToast('Napaka pri shranjevanju.','err'); }
 }
 
@@ -456,12 +478,14 @@ async function savePricing(mid) {
   await api(`/api/members/${mid}/pricing`,'POST',data);
   showToast('Cena shranjena!');
   loadMemberPricingTab(mid);
+  refreshMemberState(mid);
 }
 async function deletePricing(pid, mid) {
   if (!confirm('Izbriši to ceno?')) return;
   await api(`/api/pricing/${pid}`,'DELETE');
   showToast('Cena izbrisana.');
   loadMemberPricingTab(mid);
+  refreshMemberState(mid);
 }
 
 // ── Member discount tab ───────────────────────────────────────────────────
@@ -558,6 +582,7 @@ async function saveDiscount(mid) {
   });
   showToast('Popust dodan!');
   loadMemberDiscountTab(mid);
+  refreshMemberState(mid);
 }
 
 async function deleteDiscount(did, mid) {
@@ -565,6 +590,7 @@ async function deleteDiscount(did, mid) {
   await api(`/api/members/${mid}/discount/${did}`,'DELETE');
   showToast('Popust odstranjen.');
   loadMemberDiscountTab(mid);
+  refreshMemberState(mid);
 }
 
 // ── Member comments tab ────────────────────────────────────────────────────
@@ -1020,13 +1046,15 @@ async function savePayment() {
   closeModal();
   showToast('Plačilo vpisano!');
   if (document.getElementById('view-report').classList.contains('active')) loadReport();
-  if (document.getElementById('view-member-detail').classList.contains('active')) loadMemberPaymentsTab(data.member_id);
+  loadMemberPaymentsTab(data.member_id);
+  refreshMemberState(data.member_id);
 }
 async function deletePayment(pid, mid) {
   if (!confirm('Izbriši to plačilo?')) return;
   await api(`/api/payments/${pid}`,'DELETE');
   showToast('Plačilo izbrisano.');
   loadMemberPaymentsTab(mid);
+  refreshMemberState(mid);
 }
 
 // ── Contacts modal ────────────────────────────────────────────────────────

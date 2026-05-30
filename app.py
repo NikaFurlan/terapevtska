@@ -1,17 +1,28 @@
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
-import sqlite3, os, uuid, csv, io, hashlib, secrets, functools
+import os, uuid, csv, io, hashlib, secrets, functools
 from datetime import datetime, date, timedelta
 import calendar
 
+TURSO_URL   = os.environ.get('TURSO_URL', '')
+TURSO_TOKEN = os.environ.get('TURSO_TOKEN', '')
+
+if TURSO_URL:
+    import libsql_experimental as libsql
+else:
+    import sqlite3 as libsql
+
 app = Flask(__name__)
 app.secret_key = 'lap-terapevtska-skupina-2026-static-key'
-DB_PATH = os.path.join(os.path.dirname(__file__), 'terapevtska.db')
+DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'terapevtska.db'))
 DAYS_SL = ['Ponedeljek','Torek','Sreda','Četrtek','Petek','Sobota','Nedelja']
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    if TURSO_URL:
+        conn = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+    else:
+        conn = libsql.connect(DB_PATH)
+    conn.row_factory = libsql.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -93,6 +104,8 @@ def migrate_db(conn):
         c.execute("ALTER TABLE groups ADD COLUMN sessions_per_week INTEGER NOT NULL DEFAULT 1")
     if 'base_monthly_price' not in existing_groups:
         c.execute("ALTER TABLE groups ADD COLUMN base_monthly_price REAL")
+    if 'max_members' not in existing_groups:
+        c.execute("ALTER TABLE groups ADD COLUMN max_members INTEGER NOT NULL DEFAULT 12")
 
     existing_members = cols('members')
     for col, typedef in [
@@ -140,35 +153,33 @@ def migrate_db(conn):
 def init_db():
     conn = get_db(); c = conn.cursor()
     # Ustvari osnovne tabele
-    c.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, email TEXT,
-            password_hash TEXT NOT NULL, password_salt TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user', created_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS members (
-            id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT,
-            status TEXT NOT NULL DEFAULT 'active', enrollment_date TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS groups (
-            id TEXT PRIMARY KEY, name TEXT NOT NULL, day_of_week INTEGER NOT NULL,
-            time TEXT NOT NULL, fee_per_session REAL NOT NULL DEFAULT 30.0
-        );
-        CREATE TABLE IF NOT EXISTS group_members (
-            group_id TEXT NOT NULL, member_id TEXT NOT NULL,
-            PRIMARY KEY (group_id, member_id),
-            FOREIGN KEY (group_id) REFERENCES groups(id),
-            FOREIGN KEY (member_id) REFERENCES members(id)
-        );
-        CREATE TABLE IF NOT EXISTS attendance (
-            id TEXT PRIMARY KEY, group_id TEXT NOT NULL, member_id TEXT NOT NULL,
-            date TEXT NOT NULL,
-            status TEXT NOT NULL CHECK(status IN ('present','absent_excused','absent_unexcused','makeup')),
-            makeup_for_date TEXT, makeup_group_id TEXT, absence_end_date TEXT, notes TEXT,
-            FOREIGN KEY (group_id) REFERENCES groups(id),
-            FOREIGN KEY (member_id) REFERENCES members(id)
-        );
-    """)
+    c.execute("""CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, email TEXT,
+        password_hash TEXT NOT NULL, password_salt TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user', created_at TEXT NOT NULL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS members (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT,
+        status TEXT NOT NULL DEFAULT 'active', enrollment_date TEXT NOT NULL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS groups (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, day_of_week INTEGER NOT NULL,
+        time TEXT NOT NULL, fee_per_session REAL NOT NULL DEFAULT 30.0
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS group_members (
+        group_id TEXT NOT NULL, member_id TEXT NOT NULL,
+        PRIMARY KEY (group_id, member_id),
+        FOREIGN KEY (group_id) REFERENCES groups(id),
+        FOREIGN KEY (member_id) REFERENCES members(id)
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS attendance (
+        id TEXT PRIMARY KEY, group_id TEXT NOT NULL, member_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('present','absent_excused','absent_unexcused','makeup')),
+        makeup_for_date TEXT, makeup_group_id TEXT, absence_end_date TEXT, notes TEXT,
+        FOREIGN KEY (group_id) REFERENCES groups(id),
+        FOREIGN KEY (member_id) REFERENCES members(id)
+    )""")
     conn.commit()
     # Zaženi migracije (doda nove stolpce/tabele)
     migrate_db(conn)
@@ -379,12 +390,14 @@ def get_groups():
 def create_group():
     d = request.get_json(force=True, silent=True) or {}
     gid = str(uuid.uuid4()); conn = get_db()
-    conn.execute("INSERT INTO groups VALUES (?,?,?,?,?,?,?,?,?)",
+    conn.execute("""INSERT INTO groups (id,name,day_of_week,time,fee_per_session,sessions_per_week,
+        base_monthly_price,created_by,updated_by,max_members) VALUES (?,?,?,?,?,?,?,?,?,?)""",
         (gid, d['name'], int(d['day_of_week']), d['time'],
          float(d.get('fee_per_session',30.0)),
          int(d.get('sessions_per_week',1)),
          d.get('base_monthly_price') or None,
-         session.get('username'), None))
+         session.get('username'), None,
+         max(int(d.get('max_members',12)),1)))
     audit(conn,'CREATE','groups',gid,d['name'])
     conn.commit(); conn.close(); return jsonify({'id':gid})
 
@@ -392,12 +405,16 @@ def create_group():
 @login_required
 def update_group(gid):
     d = request.get_json(force=True, silent=True) or {}; conn = get_db()
+    g_cur = conn.execute("SELECT * FROM groups WHERE id=?", (gid,)).fetchone()
     conn.execute("""UPDATE groups SET name=?,day_of_week=?,time=?,fee_per_session=?,
-        sessions_per_week=?,base_monthly_price=?,updated_by=? WHERE id=?""",
-        (d['name'],int(d['day_of_week']),d['time'],float(d['fee_per_session']),
-         int(d.get('sessions_per_week',1)),
+        sessions_per_week=?,base_monthly_price=?,updated_by=?,max_members=? WHERE id=?""",
+        (d['name'],int(d['day_of_week']),d['time'],
+         float(d.get('fee_per_session', g_cur['fee_per_session'] if g_cur else 30.0)),
+         int(d.get('sessions_per_week', g_cur['sessions_per_week'] if g_cur else 1)),
          d.get('base_monthly_price') or None,
-         session.get('username'),gid))
+         session.get('username'),
+         min(max(int(d.get('max_members', g_cur['max_members'] if g_cur else 12)),1),24),
+         gid))
     audit(conn,'UPDATE','groups',gid,d['name'])
     conn.commit(); conn.close(); return jsonify({'ok':True})
 

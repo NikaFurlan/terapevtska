@@ -220,6 +220,11 @@ def migrate_db(conn):
         id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, user_id TEXT NOT NULL,
         username TEXT NOT NULL, action TEXT NOT NULL, table_name TEXT NOT NULL, detail TEXT
     )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS member_comments (
+        id TEXT PRIMARY KEY, member_id TEXT NOT NULL, comment TEXT NOT NULL,
+        created_by TEXT, created_at TEXT NOT NULL,
+        FOREIGN KEY (member_id) REFERENCES members(id)
+    )""")
     conn.commit()
 
 def init_db():
@@ -891,6 +896,33 @@ def delete_contact(cid):
     conn.execute("DELETE FROM contacts WHERE id=?", (cid,))
     conn.commit(); conn.close(); return jsonify({'ok':True})
 
+# ── Member comments ───────────────────────────────────────────────────────────
+@app.route('/api/members/<mid>/comments')
+@login_required
+def get_member_comments(mid):
+    conn = get_db()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM member_comments WHERE member_id=? ORDER BY created_at DESC", (mid,)).fetchall()]
+    conn.close(); return jsonify(rows)
+
+@app.route('/api/members/<mid>/comments', methods=['POST'])
+@login_required
+def create_member_comment(mid):
+    d = request.get_json(force=True, silent=True) or {}
+    if not d.get('comment','').strip():
+        return jsonify({'error':'Komentar je obvezen.'}), 400
+    cid = str(uuid.uuid4()); now = datetime.now().isoformat(); conn = get_db()
+    conn.execute("INSERT INTO member_comments VALUES (?,?,?,?,?)",
+        (cid, mid, d['comment'].strip(), session.get('username'), now))
+    conn.commit(); conn.close(); return jsonify({'id': cid, 'created_at': now, 'created_by': session.get('username')})
+
+@app.route('/api/members/comments/<cid>', methods=['DELETE'])
+@login_required
+def delete_member_comment(cid):
+    conn = get_db()
+    conn.execute("DELETE FROM member_comments WHERE id=?", (cid,))
+    conn.commit(); conn.close(); return jsonify({'ok': True})
+
 # ── Billing ───────────────────────────────────────────────────────────────────
 @app.route('/api/billing/<int:year>/<int:month>')
 @login_required
@@ -908,21 +940,23 @@ def billing_overview(year, month):
     members = [dict(r) for r in conn.execute("SELECT * FROM members WHERE status='active' ORDER BY name").fetchall()]
     result = []
     for m in members:
-        rows = conn.execute("""SELECT a.*,g.fee_per_session,g.id as grp_id,g.sessions_per_week
-            FROM attendance a JOIN groups g ON g.id=a.group_id
-            WHERE a.member_id=? AND strftime('%Y-%m',a.date)=?""", (m['id'],month_str)).fetchall()
-        if not rows:
-            result.append({'member_id':m['id'],'name':m['name'],'scheduled':0,'attended':0,
-                'excused':0,'unexcused':0,'excused_days':0,'monthly_price':0,
-                'base_amount':0,'discount_amount':0,'amount_due':0,'paid':0,'balance':0,
-                'visits_per_week':0,'next_month_rec':None,
-                'member_discount_amount':0,'member_discount_label':None})
-            continue
+        # Price from group memberships (not attendance) — same logic as members list
+        member_groups = conn.execute("""SELECT g.id, g.sessions_per_week FROM groups g
+            JOIN group_members gm ON g.id=gm.group_id WHERE gm.member_id=?""", (m['id'],)).fetchall()
+        total_spw = sum((g['sessions_per_week'] or 1) for g in member_groups)
+        idx = min(total_spw, 4) - 1 if total_spw > 0 else -1
+        monthly_price = tier_prices[idx] if idx >= 0 else 0
+
+        # Attendance stats for the month (for display and absence discount)
+        rows = conn.execute("""SELECT a.status, a.date, a.absence_end_date
+            FROM attendance a WHERE a.member_id=? AND strftime('%Y-%m',a.date)=?""",
+            (m['id'], month_str)).fetchall()
         attended = sum(1 for r in rows if r['status'] in ('present','makeup'))
         excused  = sum(1 for r in rows if r['status']=='absent_excused')
         unexcused= sum(1 for r in rows if r['status']=='absent_unexcused')
+        scheduled = len(rows)
 
-        # Calendar days of excused absence (group sessions by absence period)
+        # Calendar days of excused absence
         period_map = {}
         for r in rows:
             if r['status'] == 'absent_excused':
@@ -934,10 +968,9 @@ def billing_overview(year, month):
             ed = datetime.strptime(end_date,'%Y-%m-%d').date()
             total_excused_days += max((ed - sd).days + 1, 1)
 
-        # Determine absence discount and next-month recommendation
+        # Absence discount and next-month recommendation
         if total_excused_days <= discount_days:
-            absence_discount_pct = 0.0
-            next_month_rec = None
+            absence_discount_pct = 0.0; next_month_rec = None
         elif total_excused_days <= discount_days_max:
             absence_discount_pct = discount_pct
             next_month_rec = f"-{int(discount_pct*100)}% (odsotnost {total_excused_days} dni)"
@@ -945,14 +978,6 @@ def billing_overview(year, month):
             absence_discount_pct = 0.0
             next_month_rec = f"Individualni popust ({total_excused_days} dni) — nastavi ročno"
 
-        # Base price: tier pricing based on total sessions/week (same as members list)
-        unique_groups = {}
-        for r in rows:
-            if r['grp_id'] not in unique_groups:
-                unique_groups[r['grp_id']] = r['sessions_per_week'] or 1
-        total_spw = sum(unique_groups.values())
-        idx = min(total_spw, 4) - 1 if total_spw > 0 else -1
-        monthly_price = tier_prices[idx] if idx >= 0 else 0
         base = monthly_price
         discount = round(base * absence_discount_pct, 2)
         amount_due = base - discount
@@ -974,7 +999,7 @@ def billing_overview(year, month):
         paid = conn.execute("SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE member_id=? AND period_year=? AND period_month=?",
             (m['id'],year,month)).fetchone()['t']
         result.append({
-            'member_id':m['id'],'name':m['name'],'scheduled':len(rows),
+            'member_id':m['id'],'name':m['name'],'scheduled':scheduled,
             'attended':attended,'excused':excused,'unexcused':unexcused,
             'excused_days':total_excused_days,'monthly_price':round(monthly_price,2),
             'base_amount':round(base,2),'discount_amount':round(discount,2),

@@ -329,6 +329,7 @@ async function switchMemberTab(tab, btn) {
   else if (tab==='contacts') await loadMemberContactsTab(mid);
   else if (tab==='pricing') await loadMemberPricingTab(mid);
   else if (tab==='discount') await loadMemberDiscountTab(mid);
+  else if (tab==='comments') await loadMemberCommentsTab(mid);
 }
 async function loadMemberHistory(mid) {
   const history = await api(`/api/members/${mid}/history`);
@@ -561,6 +562,56 @@ async function deleteDiscount(mid) {
   showToast('Popust odstranjen.');
   loadMemberDiscountTab(mid);
 }
+
+// ── Member comments tab ────────────────────────────────────────────────────
+async function loadMemberCommentsTab(mid) {
+  const comments = await api(`/api/members/${mid}/comments`);
+  const el = document.getElementById('member-tab-comments');
+  el.innerHTML = `
+    <div style="max-width:640px">
+      <div class="detail-card" style="margin-bottom:1rem">
+        <h3>Nov komentar</h3>
+        <div class="form-group">
+          <textarea id="comment-input-${mid}" class="form-input" rows="3"
+            placeholder="Vpiši komentar o članu..."
+            style="resize:vertical;font-family:inherit;font-size:.9rem"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="saveMemberComment('${mid}')">Shrani komentar</button>
+      </div>
+      <div id="comments-list-${mid}">
+        ${renderComments(comments, mid)}
+      </div>
+    </div>`;
+}
+function renderComments(comments, mid) {
+  if (!comments.length) return '<p class="empty-state"><span class="empty-icon">◎</span>Ni komentarjev.</p>';
+  return comments.map(c => `
+    <div class="detail-card" style="margin-bottom:.65rem;padding:.85rem 1rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem">
+        <div style="font-size:.85rem;color:var(--text);line-height:1.6;white-space:pre-wrap;flex:1">${c.comment.replace(/</g,'&lt;')}</div>
+        <button class="btn btn-danger btn-sm" style="flex-shrink:0" onclick="deleteMemberComment('${c.id}','${mid}')">✕</button>
+      </div>
+      <div style="font-size:.72rem;color:var(--text-3);margin-top:.5rem">
+        ${fmtDate(c.created_at.split('T')[0])} · ${c.created_at.split('T')[1]?.substring(0,5)||''} · <strong>${c.created_by||'—'}</strong>
+      </div>
+    </div>`).join('');
+}
+async function saveMemberComment(mid) {
+  const ta = document.getElementById(`comment-input-${mid}`);
+  const comment = ta.value.trim();
+  if (!comment) { showToast('Komentar ne sme biti prazen.','err'); return; }
+  await api(`/api/members/${mid}/comments`, 'POST', {comment});
+  ta.value = '';
+  showToast('Komentar shranjen.');
+  loadMemberCommentsTab(mid);
+}
+async function deleteMemberComment(cid, mid) {
+  if (!confirm('Izbriši ta komentar?')) return;
+  await api(`/api/members/comments/${cid}`, 'DELETE');
+  showToast('Komentar izbrisan.');
+  loadMemberCommentsTab(mid);
+}
+
 async function loadAttendanceNav() {
   const groups = await api('/api/groups'); state.groups = groups;
   document.getElementById('att-nav-groups').innerHTML = groups.map(g=>`

@@ -263,7 +263,9 @@ def seed_data(c):
         (str(uuid.uuid4()), 'Luka Kovač', None, '031 555 666', None, '1990-01-30', None, None, '', 'active', '2026-02-10', 'system', None, None),
         (str(uuid.uuid4()), 'Sara Žnidar', 'sara@example.com', '070 777 888', 'Celje', '1995-06-18', 'Petra Žnidar', '070 000 111', '', 'active', '2026-03-01', 'system', None, None),
     ]
-    c.executemany("INSERT INTO members VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", members)
+    c.executemany("""INSERT INTO members
+        (id,name,email,phone,address,date_of_birth,emergency_contact,emergency_phone,notes,status,enrollment_date,created_by,updated_by,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", members)
     g0,g1,g2 = groups[0][0],groups[1][0],groups[2][0]
     m0,m1,m2,m3,m4 = [m[0] for m in members]
     c.executemany("INSERT INTO group_members VALUES (?,?)", [(g0,m0),(g0,m1),(g0,m2),(g1,m1),(g1,m3),(g1,m4),(g2,m0),(g2,m2),(g2,m4)])

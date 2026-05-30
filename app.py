@@ -54,7 +54,8 @@ if TURSO_URL:
                 json={'requests': pl},
                 headers={'Authorization': f'Bearer {TURSO_TOKEN}'},
                 timeout=30)
-            r.raise_for_status()
+            if not r.ok:
+                raise ValueError(f"Turso {r.status_code}: {r.text[:1000]}")
             return r.json()['results']
         def execute(self, sql, params=None):
             res = self._run([self._stmt(sql, params or [])])

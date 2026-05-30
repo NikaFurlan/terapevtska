@@ -114,8 +114,13 @@ async function saveGroup() {
     time: document.getElementById('group-time').value,
     max_members: parseInt(document.getElementById('group-max-members').value),
   };
-  if (id) await api(`/api/groups/${id}`,'PUT',data); else await api('/api/groups','POST',data);
-  closeModal(); loadGroups(); showToast('Skupina shranjena.');
+  try {
+    if (id) await api(`/api/groups/${id}`,'PUT',data); else await api('/api/groups','POST',data);
+    closeModal();
+    showToast('Skupina shranjena.');
+    loadGroups();
+    if (document.getElementById('view-dashboard').classList.contains('active')) loadDashboard();
+  } catch(e) { showToast('Napaka pri shranjevanju.','err'); }
 }
 async function deleteGroup(id) {
   if (!confirm('Izbriši skupino in vse njene zapise?')) return;
@@ -138,7 +143,7 @@ async function loadMembers() {
       const last = m.last_attendance ? fmtDate(m.last_attendance.date) : '—';
       return `<tr>
         <td><strong style="cursor:pointer;color:var(--green)" onclick="showMemberDetail('${m.id}')">${m.name}</strong>${age?`<br><small style="color:var(--text-3)">${age}</small>`:''}${m.notes?`<br><small style="color:var(--text-3);font-style:italic">${m.notes.substring(0,35)}${m.notes.length>35?'…':''}</small>`:''}</td>
-        <td>${m.phone?`<div>📞 ${m.phone}</div>`:''} ${m.email?`<div style="font-size:.78rem;color:var(--text-3)">✉ ${m.email}</div>`:''} ${m.emergency_contact?`<div style="font-size:.72rem;color:var(--text-3)">🆘 ${m.emergency_contact}</div>`:''}</td>
+        <td>${m.phone?`<div>📞 ${m.phone}</div>`:''} ${m.email?`<div style="font-size:.78rem;color:var(--text-3)">✉ ${m.email}</div>`:''}</td>
         <td>${(m.groups||[]).map(g=>`<span class="badge badge-green">${g.name}</span>`).join(' ')}</td>
         <td><div style="display:flex;gap:.3rem;flex-wrap:wrap"><span class="badge badge-green">✓ ${m.month_attended}</span>${m.month_excused>0?`<span class="badge badge-amber">○ ${m.month_excused}</span>`:''} ${m.month_unexcused>0?`<span class="badge badge-red">✗ ${m.month_unexcused}</span>`:''}</div><div style="font-size:.72rem;color:var(--text-3);margin-top:.2rem">Zadnji: ${last}</div></td>
         <td><span style="font-weight:700;color:${m.paid_this_month>0?'var(--green)':'var(--red)'};font-size:.9rem">€ ${m.paid_this_month.toFixed(2)}</span></td>
@@ -191,7 +196,7 @@ async function showMemberModal(id) {
   document.getElementById('modal-member-title').textContent = id?'Uredi člana':'Nov član';
   const checkEl = document.getElementById('member-groups-check');
   checkEl.innerHTML = groups.map(g=>`<label class="checkbox-label"><input type="checkbox" name="mg" value="${g.id}"> ${g.name}</label>`).join('');
-  const fields = ['name','email','phone','dob','address','emcontact','emphone','notes'];
+  const fields = ['name','email','phone','dob','address','notes'];
   fields.forEach(f => document.getElementById(`member-${f}`).value = '');
   document.getElementById('member-status').value = 'active';
   if (id) {
@@ -202,8 +207,6 @@ async function showMemberModal(id) {
       document.getElementById('member-phone').value = m.phone||'';
       document.getElementById('member-dob').value = m.date_of_birth||'';
       document.getElementById('member-address').value = m.address||'';
-      document.getElementById('member-emcontact').value = m.emergency_contact||'';
-      document.getElementById('member-emphone').value = m.emergency_phone||'';
       document.getElementById('member-notes').value = m.notes||'';
       document.getElementById('member-status').value = m.status;
       const gids = (m.groups||[]).map(g=>g.id);
@@ -220,14 +223,25 @@ async function saveMember() {
     phone: document.getElementById('member-phone').value,
     date_of_birth: document.getElementById('member-dob').value,
     address: document.getElementById('member-address').value,
-    emergency_contact: document.getElementById('member-emcontact').value,
-    emergency_phone: document.getElementById('member-emphone').value,
     notes: document.getElementById('member-notes').value,
     status: document.getElementById('member-status').value,
     group_ids: [...document.querySelectorAll('#member-groups-check input:checked')].map(cb=>cb.value),
   };
-  if (id) await api(`/api/members/${id}`,'PUT',data); else await api('/api/members','POST',data);
-  closeModal(); loadMembers(); showToast('Član shranjen.');
+  // Check capacity only for groups the member is not already in
+  const currentGroupIds = id ? ((state.members.find(m=>m.id===id)||{}).groups||[]).map(g=>g.id) : [];
+  const newGroupIds = data.group_ids.filter(gid => !currentGroupIds.includes(gid));
+  const fullGroups = (state.groups||[]).filter(g => newGroupIds.includes(g.id) && g.member_count >= g.max_members);
+  if (fullGroups.length > 0) {
+    const names = fullGroups.map(g => `"${g.name}" (${g.member_count}/${g.max_members} članov)`).join('\n');
+    if (!confirm(`Naslednje skupine so polne:\n${names}\n\nAli želite člana vseeno dodati?`)) return;
+  }
+  try {
+    if (id) await api(`/api/members/${id}`,'PUT',data); else await api('/api/members','POST',data);
+    closeModal();
+    showToast('Član shranjen.');
+    loadMembers();
+    if (document.getElementById('view-dashboard').classList.contains('active')) loadDashboard();
+  } catch(e) { showToast('Napaka pri shranjevanju.','err'); }
 }
 
 // ── Member Detail ─────────────────────────────────────────────────────────
@@ -273,10 +287,9 @@ async function loadMemberOverview(m) {
         </div>
       </div>
       <div class="detail-card">
-        <h3>Nujni kontakt</h3>
+        <h3>Opombe</h3>
         <div style="display:flex;flex-direction:column;gap:.35rem;font-size:.85rem">
-          ${m.emergency_contact?`<div>👤 <strong>${m.emergency_contact}</strong></div><div>📞 ${m.emergency_phone||'—'}</div>`:'<div style="color:var(--text-3)">Ni vnešen</div>'}
-          ${m.notes?`<div style="margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border);color:var(--text-2);font-style:italic;font-size:.8rem">${m.notes}</div>`:''}
+          ${m.notes?`<div style="color:var(--text-2);font-style:italic">${m.notes}</div>`:'<div style="color:var(--text-3)">Ni opomb.</div>'}
           <div style="margin-top:auto;padding-top:.5rem;border-top:1px solid var(--border);font-size:.72rem;color:var(--text-3)">
             Dodal: <strong>${m.created_by||'—'}</strong>
             ${m.updated_by?`<br>Urejal: <strong>${m.updated_by}</strong>`:''}

@@ -577,21 +577,53 @@ def upsert_session():
 def get_members():
     conn = get_db()
     members = [dict(r) for r in conn.execute("SELECT * FROM members ORDER BY name").fetchall()]
+    if not members:
+        conn.close(); return jsonify([])
     month_str = date.today().strftime('%Y-%m')
-    for m in members:
-        m['groups'] = [dict(r) for r in conn.execute(
-            "SELECT g.* FROM groups g JOIN group_members gm ON g.id=gm.group_id WHERE gm.member_id=?", (m['id'],)).fetchall()]
-        stats = conn.execute("""SELECT
+    ids = [m['id'] for m in members]
+    ph = ','.join('?' * len(ids))
+
+    gm_rows = conn.execute(f"""
+        SELECT gm.member_id, g.id as gid, g.name as gname, g.day_of_week, g.time, g.fee_per_session
+        FROM group_members gm JOIN groups g ON g.id=gm.group_id
+        WHERE gm.member_id IN ({ph})""", ids).fetchall()
+    groups_map = {}
+    for r in gm_rows:
+        groups_map.setdefault(r['member_id'], []).append(
+            {'id': r['gid'], 'name': r['gname'], 'day_of_week': r['day_of_week'],
+             'time': r['time'], 'fee_per_session': r['fee_per_session']})
+
+    stats_rows = conn.execute(f"""
+        SELECT member_id,
             COUNT(*) FILTER (WHERE status IN ('present','makeup')) as attended,
             COUNT(*) FILTER (WHERE status='absent_excused') as excused,
             COUNT(*) FILTER (WHERE status='absent_unexcused') as unexcused
-            FROM attendance WHERE member_id=? AND strftime('%Y-%m',date)=?""", (m['id'],month_str)).fetchone()
-        m['month_attended'] = stats['attended']; m['month_excused'] = stats['excused']; m['month_unexcused'] = stats['unexcused']
-        last = conn.execute("SELECT date,status FROM attendance WHERE member_id=? ORDER BY date DESC LIMIT 1", (m['id'],)).fetchone()
-        m['last_attendance'] = dict(last) if last else None
-        paid = conn.execute("SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE member_id=? AND period_year=? AND period_month=?",
-            (m['id'], date.today().year, date.today().month)).fetchone()['t']
-        m['paid_this_month'] = paid
+        FROM attendance WHERE member_id IN ({ph}) AND strftime('%Y-%m',date)=?
+        GROUP BY member_id""", ids + [month_str]).fetchall()
+    stats_map = {r['member_id']: r for r in stats_rows}
+
+    last_rows = conn.execute(f"""
+        SELECT a.member_id, a.date, a.status FROM attendance a
+        JOIN (SELECT member_id, MAX(date) as mdate FROM attendance
+              WHERE member_id IN ({ph}) GROUP BY member_id) lx
+        ON a.member_id=lx.member_id AND a.date=lx.mdate""", ids).fetchall()
+    last_map = {r['member_id']: {'date': r['date'], 'status': r['status']} for r in last_rows}
+
+    paid_rows = conn.execute(f"""
+        SELECT member_id, COALESCE(SUM(amount),0) as t FROM payments
+        WHERE member_id IN ({ph}) AND period_year=? AND period_month=?
+        GROUP BY member_id""", ids + [date.today().year, date.today().month]).fetchall()
+    paid_map = {r['member_id']: r['t'] for r in paid_rows}
+
+    for m in members:
+        mid = m['id']
+        m['groups'] = groups_map.get(mid, [])
+        s = stats_map.get(mid)
+        m['month_attended'] = s['attended'] if s else 0
+        m['month_excused'] = s['excused'] if s else 0
+        m['month_unexcused'] = s['unexcused'] if s else 0
+        m['last_attendance'] = last_map.get(mid)
+        m['paid_this_month'] = paid_map.get(mid, 0)
     conn.close(); return jsonify(members)
 
 @app.route('/api/members', methods=['POST'])
@@ -599,10 +631,15 @@ def get_members():
 def create_member():
     d = request.get_json(force=True, silent=True) or {}
     mid = str(uuid.uuid4()); now = datetime.now().isoformat(); conn = get_db()
-    conn.execute("INSERT INTO members VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (mid,d['name'],d.get('email'),d.get('phone'),d.get('address'),d.get('date_of_birth'),
-         d.get('emergency_contact'),d.get('emergency_phone'),d.get('notes'),'active',
-         date.today().isoformat(),session.get('username'),None,None))
+    conn.execute("""INSERT INTO members
+        (id,name,email,phone,status,enrollment_date,address,date_of_birth,
+         emergency_contact,emergency_phone,notes,created_by,updated_by,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (mid, d['name'], d.get('email') or None, d.get('phone') or None,
+         'active', date.today().isoformat(),
+         d.get('address') or None, d.get('date_of_birth') or None,
+         d.get('emergency_contact') or None, d.get('emergency_phone') or None,
+         d.get('notes') or None, session.get('username'), None, None))
     for gid in d.get('group_ids',[]): conn.execute("INSERT OR IGNORE INTO group_members VALUES (?,?)",(gid,mid))
     audit(conn,'CREATE','members',mid,d['name'])
     conn.commit(); conn.close(); return jsonify({'id':mid})
@@ -614,9 +651,11 @@ def update_member(mid):
     now = datetime.now().isoformat(); conn = get_db()
     conn.execute("""UPDATE members SET name=?,email=?,phone=?,address=?,date_of_birth=?,
         emergency_contact=?,emergency_phone=?,notes=?,status=?,updated_by=?,updated_at=? WHERE id=?""",
-        (d['name'],d.get('email'),d.get('phone'),d.get('address'),d.get('date_of_birth'),
-         d.get('emergency_contact'),d.get('emergency_phone'),d.get('notes'),
-         d.get('status','active'),session.get('username'),now,mid))
+        (d['name'], d.get('email') or None, d.get('phone') or None,
+         d.get('address') or None, d.get('date_of_birth') or None,
+         d.get('emergency_contact') or None, d.get('emergency_phone') or None,
+         d.get('notes') or None, d.get('status','active'),
+         session.get('username'), now, mid))
     if 'group_ids' in d:
         conn.execute("DELETE FROM group_members WHERE member_id=?", (mid,))
         for gid in d['group_ids']: conn.execute("INSERT OR IGNORE INTO group_members VALUES (?,?)",(gid,mid))

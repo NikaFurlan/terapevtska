@@ -6,22 +6,74 @@ import calendar
 TURSO_URL   = os.environ.get('TURSO_URL', '')
 TURSO_TOKEN = os.environ.get('TURSO_TOKEN', '')
 
-if TURSO_URL:
-    import libsql_experimental as libsql
-else:
-    libsql = sqlite3
-
 app = Flask(__name__)
 app.secret_key = 'lap-terapevtska-skupina-2026-static-key'
 DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'terapevtska.db'))
 DAYS_SL = ['Ponedeljek','Torek','Sreda','Četrtek','Petek','Sobota','Nedelja']
 
+# ── Turso wrapper — makes libsql_experimental behave like sqlite3 ─────────────
+if TURSO_URL:
+    import libsql_experimental as _libsql
+
+    class _Row:
+        def __init__(self, description, data):
+            self._cols = [d[0] for d in description]
+            self._data = tuple(data)
+        def __getitem__(self, key):
+            if isinstance(key, str):
+                return self._data[self._cols.index(key)]
+            return self._data[key]
+        def __iter__(self):
+            return iter(self._data)
+        def keys(self):
+            return self._cols
+        def __len__(self):
+            return len(self._data)
+
+    class _Cursor:
+        def __init__(self, cur):
+            self._cur = cur
+        def execute(self, sql, params=None):
+            self._cur.execute(sql, params) if params is not None else self._cur.execute(sql)
+            return self
+        def executemany(self, sql, seq):
+            for p in seq: self._cur.execute(sql, p)
+            return self
+        def fetchone(self):
+            row = self._cur.fetchone()
+            if row is None: return None
+            return _Row(self._cur.description, row) if self._cur.description else row
+        def fetchall(self):
+            rows = self._cur.fetchall()
+            desc = self._cur.description
+            return [_Row(desc, r) for r in rows] if desc else rows
+        @property
+        def description(self):
+            return self._cur.description
+
+    class _Conn:
+        def __init__(self, conn):
+            self._conn = conn
+        def cursor(self):
+            return _Cursor(self._conn.cursor())
+        def execute(self, sql, params=None):
+            c = self._conn.cursor()
+            c.execute(sql, params) if params is not None else c.execute(sql)
+            return _Cursor(c)
+        def executemany(self, sql, seq):
+            for p in seq: self._conn.cursor().execute(sql, p)
+        def commit(self):
+            self._conn.commit()
+        def close(self):
+            self._conn.close()
+
 # ── DB helpers ────────────────────────────────────────────────────────────────
 def get_db():
     if TURSO_URL:
-        conn = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
-    else:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return _Conn(conn)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

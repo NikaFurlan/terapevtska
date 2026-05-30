@@ -326,7 +326,6 @@ async function switchMemberTab(tab, btn) {
   const mid = state.currentMemberId;
   if (tab==='history') await loadMemberHistory(mid);
   else if (tab==='payments') await loadMemberPaymentsTab(mid);
-  else if (tab==='contacts') await loadMemberContactsTab(mid);
   else if (tab==='pricing') await loadMemberPricingTab(mid);
   else if (tab==='discount') await loadMemberDiscountTab(mid);
   else if (tab==='comments') await loadMemberCommentsTab(mid);

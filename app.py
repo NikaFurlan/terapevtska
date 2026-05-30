@@ -11,68 +11,87 @@ app.secret_key = 'lap-terapevtska-skupina-2026-static-key'
 DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'terapevtska.db'))
 DAYS_SL = ['Ponedeljek','Torek','Sreda','Četrtek','Petek','Sobota','Nedelja']
 
-# ── Turso wrapper — makes libsql_experimental behave like sqlite3 ─────────────
+# ── Turso HTTP client (pure Python, no Rust/tokio conflicts) ──────────────────
 if TURSO_URL:
-    import libsql_experimental as _libsql
+    import requests as _req
+
+    def _pval(v):
+        if v is None: return None
+        t = v.get('type','null')
+        if t == 'null': return None
+        val = v.get('value')
+        if t == 'integer': return int(val)
+        if t == 'float': return float(val)
+        return val
 
     class _Row:
-        def __init__(self, description, data):
-            self._cols = [d[0] for d in description]
-            self._data = tuple(data)
+        def __init__(self, cols, vals):
+            self._cols = cols; self._vals = vals
         def __getitem__(self, key):
-            if isinstance(key, str):
-                return self._data[self._cols.index(key)]
-            return self._data[key]
-        def __iter__(self):
-            return iter(self._data)
-        def keys(self):
-            return self._cols
-        def __len__(self):
-            return len(self._data)
+            if isinstance(key, str): return self._vals[self._cols.index(key)]
+            return self._vals[key]
+        def __iter__(self): return iter(self._vals)
+        def keys(self): return self._cols
+        def __len__(self): return len(self._vals)
 
-    class _Cursor:
-        def __init__(self, cur):
-            self._cur = cur
+    class _Cur:
+        def __init__(self):
+            self._url = TURSO_URL.replace('libsql://', 'https://')
+            self._cols = []; self._rows = []
+        def _arg(self, p):
+            if p is None: return {'type':'null'}
+            if isinstance(p, bool): return {'type':'integer','value':'1' if p else '0'}
+            if isinstance(p, int): return {'type':'integer','value':str(p)}
+            if isinstance(p, float): return {'type':'float','value':str(p)}
+            return {'type':'text','value':str(p)}
+        def _stmt(self, sql, params):
+            s = {'sql': sql}
+            if params: s['args'] = [self._arg(p) for p in params]
+            return s
+        def _run(self, stmts):
+            pl = [{'type':'execute','stmt':s} for s in stmts] + [{'type':'close'}]
+            r = _req.post(f"{self._url}/v2/pipeline",
+                json={'requests': pl},
+                headers={'Authorization': f'Bearer {TURSO_TOKEN}'},
+                timeout=30)
+            r.raise_for_status()
+            return r.json()['results']
         def execute(self, sql, params=None):
-            self._cur.execute(sql, params) if params is not None else self._cur.execute(sql)
+            res = self._run([self._stmt(sql, params or [])])
+            if res[0]['type'] != 'ok':
+                raise ValueError(res[0].get('error',{}).get('message','Query error'))
+            result = res[0]['response']['result']
+            self._cols = [c['name'] for c in result['cols']]
+            self._rows = [[_pval(v) for v in row] for row in result['rows']]
             return self
         def executemany(self, sql, seq):
-            for p in seq: self._cur.execute(sql, p)
+            seq = list(seq)
+            if not seq: return self
+            res = self._run([self._stmt(sql, p) for p in seq])
+            for r in res:
+                if r['type'] != 'ok':
+                    raise ValueError(r.get('error',{}).get('message','Query error'))
             return self
         def fetchone(self):
-            row = self._cur.fetchone()
-            if row is None: return None
-            return _Row(self._cur.description, row) if self._cur.description else row
+            return _Row(self._cols, self._rows[0]) if self._rows else None
         def fetchall(self):
-            rows = self._cur.fetchall()
-            desc = self._cur.description
-            return [_Row(desc, r) for r in rows] if desc else rows
+            return [_Row(self._cols, r) for r in self._rows]
         @property
         def description(self):
-            return self._cur.description
+            return [(c,) for c in self._cols] if self._cols else None
 
-    class _Conn:
-        def __init__(self, conn):
-            self._conn = conn
-        def cursor(self):
-            return _Cursor(self._conn.cursor())
+    class _TursoConn:
+        def cursor(self): return _Cur()
         def execute(self, sql, params=None):
-            c = self._conn.cursor()
-            c.execute(sql, params) if params is not None else c.execute(sql)
-            return _Cursor(c)
-        def executemany(self, sql, seq):
-            for p in seq: self._conn.cursor().execute(sql, p)
-        def commit(self):
-            self._conn.commit()
-        def close(self):
-            self._conn.close()
+            c = _Cur(); c.execute(sql, params); return c
+        def executemany(self, sql, seq): _Cur().executemany(sql, seq)
+        def commit(self): pass
+        def close(self): pass
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 def get_db():
     if TURSO_URL:
-        conn = _libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
-        conn.execute("PRAGMA foreign_keys = ON")
-        return _Conn(conn)
+        return _TursoConn()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

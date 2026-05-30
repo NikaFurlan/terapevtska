@@ -276,9 +276,11 @@ async function showMemberDetail(mid) {
 }
 async function loadMemberOverview(m) {
   const age = m.date_of_birth ? Math.floor((new Date()-new Date(m.date_of_birth))/31557600000) : null;
-  const disc = await api(`/api/members/${m.id}/discount`);
-  const discBadge = disc
-    ? `<div style="margin-top:.6rem"><span class="badge badge-amber">👤 Popust: ${disc.discount_type==='percent'?disc.discount_value+'%':'€ '+parseFloat(disc.discount_value).toFixed(2)}${disc.reason?' — '+disc.reason:''}</span></div>`
+  const discs = await api(`/api/members/${m.id}/discount`);
+  const today = todayISO();
+  const activeDiscs = (discs||[]).filter(d => d.valid_from <= today && (!d.valid_to || d.valid_to >= today));
+  const discBadge = activeDiscs.length
+    ? `<div style="margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.3rem">${activeDiscs.map(d=>`<span class="badge badge-amber">👤 ${d.discount_type==='percent'?d.discount_value+'%':'€ '+parseFloat(d.discount_value).toFixed(2)}${d.reason?' — '+d.reason:''}</span>`).join('')}</div>`
     : '';
   document.getElementById('member-tab-overview').innerHTML = `
     <div class="detail-grid">
@@ -464,33 +466,40 @@ async function deletePricing(pid, mid) {
 
 // ── Member discount tab ───────────────────────────────────────────────────
 async function loadMemberDiscountTab(mid) {
-  const disc = await api(`/api/members/${mid}/discount`);
+  const discs = await api(`/api/members/${mid}/discount`);
+  const today = todayISO();
+  const discList = (discs||[]).map(d => {
+    const active = d.valid_from <= today && (!d.valid_to || d.valid_to >= today);
+    return `<div style="display:flex;justify-content:space-between;align-items:center;
+        padding:.75rem 1rem;border-radius:var(--radius-sm);margin-bottom:.5rem;
+        background:${active?'var(--green-light)':'var(--bg)'};
+        border:1px solid ${active?'var(--green)':'var(--border)'}">
+      <div>
+        <div style="font-weight:700;font-size:1.05rem;color:${active?'var(--green-dark)':'var(--text-2)'}">
+          ${d.discount_type==='percent' ? d.discount_value+'%' : '€ '+parseFloat(d.discount_value).toFixed(2)}
+          <span style="font-size:.75rem;font-weight:400;color:var(--text-3);margin-left:.35rem">${d.discount_type==='percent'?'odstotek':'fiksni znesek'}</span>
+          ${active?'<span class="badge badge-green" style="margin-left:.5rem;font-size:.65rem">aktivno</span>':'<span class="badge badge-gray" style="margin-left:.5rem;font-size:.65rem">neaktivno</span>'}
+        </div>
+        ${d.reason?`<div style="font-size:.82rem;color:var(--text-2);margin-top:.15rem;font-style:italic">${d.reason}</div>`:''}
+        <div style="font-size:.72rem;color:var(--text-3);margin-top:.25rem">
+          Od: ${fmtDate(d.valid_from)} ${d.valid_to?' · do: '+fmtDate(d.valid_to):'· <span style="color:var(--green)">brez roka</span>'}
+          · Nastavil: ${d.created_by||'—'}
+        </div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="deleteDiscount('${d.id}','${mid}')">✕</button>
+    </div>`;
+  }).join('');
+
   document.getElementById('member-tab-discount').innerHTML = `
-    <div class="detail-card" style="max-width:520px">
-      <h3>Individualni popust za tega člana</h3>
+    <div class="detail-card" style="max-width:560px">
+      <h3>Individualni popusti za tega člana</h3>
       <p style="color:var(--text-2);font-size:.85rem;margin-bottom:1.25rem;line-height:1.6">
-        Popust se aplicira <strong>poleg</strong> globalnega popusta za odsotnosti. 
-        Primeri: socialni popust, dolgotrajni član, dogovor.
+        Popusti se aplicirajo <strong>poleg</strong> globalnega popusta za odsotnosti.
+        Dodaš lahko več popustov z različnimi obdobji veljavnosti.
       </p>
-      ${disc ? `
-        <div style="background:var(--green-light);border:1px solid var(--green);border-radius:var(--radius);padding:1rem;margin-bottom:1rem">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div>
-              <div style="font-size:1.4rem;font-weight:700;color:var(--green-dark)">
-                ${disc.discount_type==='percent' ? disc.discount_value+'%' : '€ '+parseFloat(disc.discount_value).toFixed(2)}
-                <span style="font-size:.8rem;font-weight:400;color:var(--text-2);margin-left:.4rem">${disc.discount_type==='percent'?'odstotek':'fiksni znesek'}</span>
-              </div>
-              ${disc.reason?`<div style="font-size:.85rem;color:var(--text-2);margin-top:.25rem;font-style:italic">${disc.reason}</div>`:''}
-              <div style="font-size:.75rem;color:var(--text-3);margin-top:.35rem">
-                Veljavno od: ${fmtDate(disc.valid_from)}
-                ${disc.valid_to?' · do: '+fmtDate(disc.valid_to):'· <span style="color:var(--green)">brez roka</span>'}
-              </div>
-              <div style="font-size:.72rem;color:var(--text-3);margin-top:.2rem">Nastavil: ${disc.created_by||'—'}</div>
-            </div>
-            <button class="btn btn-danger btn-sm" onclick="deleteDiscount('${mid}')">Odstrani popust</button>
-          </div>
-        </div>` : 
-        `<div class="info-box" style="margin-bottom:1rem">Ta član nima individualnega popusta.</div>`}
+      ${discs&&discs.length ? discList : '<div class="info-box" style="margin-bottom:1rem">Ta član nima individualnih popustov.</div>'}
+      <div style="border-top:1px solid var(--border);margin:1.25rem 0 1rem"></div>
+      <h4 style="margin-bottom:.85rem;font-size:.95rem">Dodaj nov popust</h4>
       <div id="disc-form-${mid}">
         <div class="form-row">
           <div class="form-group"><label>Vrsta popusta</label>
@@ -504,25 +513,20 @@ async function loadMemberDiscountTab(mid) {
           </div>
         </div>
         <div class="form-group"><label>Razlog / opomba</label>
-          <input type="text" id="df-reason-${mid}" class="form-input" placeholder="npr. socialni popust, dogovor..." value="${disc?disc.reason||'':''}">
+          <input type="text" id="df-reason-${mid}" class="form-input" placeholder="npr. socialni popust, dogovor...">
         </div>
         <div class="form-row">
           <div class="form-group"><label>Veljavno od</label>
-            <input type="date" id="df-from-${mid}" class="form-input" value="${disc?disc.valid_from:todayISO()}">
+            <input type="date" id="df-from-${mid}" class="form-input" value="${today}">
           </div>
           <div class="form-group"><label>Veljavno do (neobvezno)</label>
-            <input type="date" id="df-to-${mid}" class="form-input" value="${disc?disc.valid_to||'':''}">
+            <input type="date" id="df-to-${mid}" class="form-input">
           </div>
         </div>
         <div id="df-preview-${mid}" style="display:none;padding:.6rem .85rem;background:var(--amber-light);border-radius:var(--radius-sm);margin-bottom:.85rem;font-size:.85rem;color:var(--amber)"></div>
-        <button class="btn btn-primary" onclick="saveDiscount('${mid}')">💾 Shrani popust</button>
+        <button class="btn btn-primary" onclick="saveDiscount('${mid}')">+ Dodaj popust</button>
       </div>
     </div>`;
-  // Nastavi obstoječe vrednosti
-  if (disc) {
-    document.getElementById(`df-type-${mid}`).value = disc.discount_type;
-    document.getElementById(`df-value-${mid}`).value = disc.discount_value;
-  }
   updateDiscountPreview(mid);
 }
 
@@ -543,21 +547,22 @@ function updateDiscountPreview(mid) {
 async function saveDiscount(mid) {
   const val = parseFloat(document.getElementById(`df-value-${mid}`).value);
   if (!val || val <= 0) { showToast('Vnesi vrednost popusta.','err'); return; }
-  const data = {
+  const from = document.getElementById(`df-from-${mid}`).value;
+  if (!from) { showToast('Vnesi datum veljavnosti.','err'); return; }
+  await api(`/api/members/${mid}/discount`,'POST',{
     discount_type: document.getElementById(`df-type-${mid}`).value,
     discount_value: val,
     reason: document.getElementById(`df-reason-${mid}`).value,
-    valid_from: document.getElementById(`df-from-${mid}`).value,
+    valid_from: from,
     valid_to: document.getElementById(`df-to-${mid}`).value||null,
-  };
-  await api(`/api/members/${mid}/discount`,'POST',data);
-  showToast('Popust shranjen!');
+  });
+  showToast('Popust dodan!');
   loadMemberDiscountTab(mid);
 }
 
-async function deleteDiscount(mid) {
-  if (!confirm('Odstrani individualni popust za tega člana?')) return;
-  await api(`/api/members/${mid}/discount`,'DELETE');
+async function deleteDiscount(did, mid) {
+  if (!confirm('Odstrani ta popust?')) return;
+  await api(`/api/members/${mid}/discount/${did}`,'DELETE');
   showToast('Popust odstranjen.');
   loadMemberDiscountTab(mid);
 }

@@ -145,10 +145,10 @@ def migrate_db(conn):
         FOREIGN KEY (group_id) REFERENCES groups(id)
     )""")
 
-    # Tabela: member_discount — individualni popust na člana
+    # Tabela: member_discount — individualni popusti na člana (več popustov z različnimi obdobji)
     c.execute("""CREATE TABLE IF NOT EXISTS member_discount (
         id TEXT PRIMARY KEY,
-        member_id TEXT NOT NULL UNIQUE,
+        member_id TEXT NOT NULL,
         discount_type TEXT NOT NULL DEFAULT 'percent',
         discount_value REAL NOT NULL,
         reason TEXT,
@@ -158,6 +158,22 @@ def migrate_db(conn):
         created_at TEXT NOT NULL,
         FOREIGN KEY (member_id) REFERENCES members(id)
     )""")
+    # Migracija: odstrani UNIQUE constraint z member_id (podpira več popustov na člana)
+    try:
+        schema = c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='member_discount'").fetchone()
+        if schema and schema[0] and 'UNIQUE' in schema[0]:
+            c.execute("""CREATE TABLE member_discount_v2 (
+                id TEXT PRIMARY KEY, member_id TEXT NOT NULL,
+                discount_type TEXT NOT NULL DEFAULT 'percent', discount_value REAL NOT NULL,
+                reason TEXT, valid_from TEXT NOT NULL, valid_to TEXT,
+                created_by TEXT, created_at TEXT NOT NULL,
+                FOREIGN KEY (member_id) REFERENCES members(id)
+            )""")
+            c.execute("INSERT OR IGNORE INTO member_discount_v2 SELECT * FROM member_discount")
+            c.execute("DROP TABLE member_discount")
+            c.execute("ALTER TABLE member_discount_v2 RENAME TO member_discount")
+    except Exception:
+        pass
     c.execute("""CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         group_id TEXT NOT NULL,
@@ -634,7 +650,9 @@ def get_members():
         SELECT member_id, discount_type, discount_value FROM member_discount
         WHERE member_id IN ({ph}) AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)""",
         ids + [today_iso, today_iso]).fetchall()
-    disc_map = {r['member_id']: r for r in disc_rows}
+    disc_map = {}
+    for r in disc_rows:
+        disc_map.setdefault(r['member_id'], []).append(r)
 
     for m in members:
         mid = m['id']
@@ -648,13 +666,12 @@ def get_members():
         total_visits = sum(g.get('sessions_per_week', 1) for g in m['groups'])
         idx = min(total_visits, 4) - 1 if total_visits > 0 else -1
         gross = tier_prices[idx] if idx >= 0 else 0
-        d = disc_map.get(mid)
-        if d and gross > 0:
-            if d['discount_type'] == 'percent':
-                gross = round(gross * (1 - float(d['discount_value']) / 100), 2)
-            else:
-                gross = round(max(0.0, gross - float(d['discount_value'])), 2)
-        m['expected_monthly'] = gross
+        total_disc = sum(
+            gross * float(d['discount_value']) / 100 if d['discount_type'] == 'percent'
+            else float(d['discount_value'])
+            for d in disc_map.get(mid, [])
+        )
+        m['expected_monthly'] = round(max(0.0, gross - total_disc), 2)
     conn.close(); return jsonify(members)
 
 @app.route('/api/members', methods=['POST'])
@@ -777,36 +794,28 @@ def delete_pricing(pid):
 @login_required
 def get_member_discount(mid):
     conn = get_db()
-    row = conn.execute("SELECT * FROM member_discount WHERE member_id=?", (mid,)).fetchone()
-    conn.close()
-    return jsonify(dict(row) if row else None)
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM member_discount WHERE member_id=? ORDER BY valid_from DESC", (mid,)).fetchall()]
+    conn.close(); return jsonify(rows)
 
 @app.route('/api/members/<mid>/discount', methods=['POST'])
 @login_required
 def set_member_discount(mid):
     d = request.get_json(force=True, silent=True) or {}
     conn = get_db(); now = datetime.now().isoformat()
-    existing = conn.execute("SELECT id FROM member_discount WHERE member_id=?", (mid,)).fetchone()
-    if existing:
-        conn.execute("""UPDATE member_discount SET discount_type=?,discount_value=?,reason=?,
-            valid_from=?,valid_to=?,created_by=?,created_at=? WHERE member_id=?""",
-            (d['discount_type'], float(d['discount_value']), d.get('reason',''),
-             d['valid_from'], d.get('valid_to') or None, session.get('username'), now, mid))
-        did = existing['id']
-    else:
-        did = str(uuid.uuid4())
-        conn.execute("INSERT INTO member_discount VALUES (?,?,?,?,?,?,?,?,?)",
-            (did, mid, d['discount_type'], float(d['discount_value']),
-             d.get('reason',''), d['valid_from'], d.get('valid_to') or None,
-             session.get('username'), now))
-    audit(conn,'UPSERT','member_discount',did,f"{mid} {d['discount_value']}{'%' if d['discount_type']=='percent' else '€'}")
-    conn.commit(); conn.close(); return jsonify({'ok':True})
+    did = str(uuid.uuid4())
+    conn.execute("INSERT INTO member_discount VALUES (?,?,?,?,?,?,?,?,?)",
+        (did, mid, d['discount_type'], float(d['discount_value']),
+         d.get('reason',''), d['valid_from'], d.get('valid_to') or None,
+         session.get('username'), now))
+    audit(conn,'CREATE','member_discount',did,f"{mid} {d['discount_value']}{'%' if d['discount_type']=='percent' else '€'}")
+    conn.commit(); conn.close(); return jsonify({'id': did})
 
-@app.route('/api/members/<mid>/discount', methods=['DELETE'])
+@app.route('/api/members/<mid>/discount/<did>', methods=['DELETE'])
 @login_required
-def delete_member_discount(mid):
-    conn = get_db()
-    conn.execute("DELETE FROM member_discount WHERE member_id=?", (mid,))
+def delete_member_discount(mid, did):
+    conn = get_db(); audit(conn,'DELETE','member_discount',did)
+    conn.execute("DELETE FROM member_discount WHERE id=? AND member_id=?", (did, mid))
     conn.commit(); conn.close(); return jsonify({'ok':True})
 
 # ── Attendance ────────────────────────────────────────────────────────────────
@@ -996,21 +1005,25 @@ def billing_overview(year, month):
         discount = round(base * absence_discount_pct, 2)
         amount_due = base - discount
 
-        # Individual member discount (popust)
+        # Individual member discounts (popusti) — multiple allowed
         first_day = f"{year:04d}-{month:02d}-01"
         last_day  = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
-        member_disc = conn.execute("""SELECT * FROM member_discount WHERE member_id=?
-            AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)""",
-            (m['id'], last_day, first_day)).fetchone()
-        member_discount_amount = 0.0; member_discount_label = None
-        if member_disc:
-            if member_disc['discount_type'] == 'percent':
-                member_discount_amount = round(amount_due * float(member_disc['discount_value']) / 100, 2)
-                member_discount_label = f"-{member_disc['discount_value']}%"
+        member_discs = conn.execute("""SELECT * FROM member_discount WHERE member_id=?
+            AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)
+            ORDER BY valid_from""",
+            (m['id'], last_day, first_day)).fetchall()
+        member_discount_amount = 0.0; member_discount_labels = []
+        for md in member_discs:
+            if md['discount_type'] == 'percent':
+                amt = round(amount_due * float(md['discount_value']) / 100, 2)
+                member_discount_labels.append(f"-{md['discount_value']}%{' ('+md['reason']+')' if md['reason'] else ''}")
             else:
-                member_discount_amount = round(min(float(member_disc['discount_value']), amount_due), 2)
-                member_discount_label = f"-€{member_disc['discount_value']:.2f}"
-            amount_due = round(amount_due - member_discount_amount, 2)
+                amt = round(float(md['discount_value']), 2)
+                member_discount_labels.append(f"-€{float(md['discount_value']):.2f}{' ('+md['reason']+')' if md['reason'] else ''}")
+            member_discount_amount += amt
+        member_discount_amount = round(min(member_discount_amount, amount_due), 2)
+        member_discount_label = ', '.join(member_discount_labels) if member_discount_labels else None
+        amount_due = round(max(0.0, amount_due - member_discount_amount), 2)
         paid = conn.execute("SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE member_id=? AND period_year=? AND period_month=?",
             (m['id'],year,month)).fetchone()['t']
         result.append({

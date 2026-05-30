@@ -256,7 +256,7 @@ def init_db():
     # Zaženi migracije (doda nove stolpce/tabele)
     migrate_db(conn)
     # Default settings
-    defaults = [('discount_percent','20'),('discount_days','7'),('currency','EUR'),('org_name','Lipovž Active Program'),
+    defaults = [('discount_percent','20'),('discount_days','7'),('discount_days_max','14'),('currency','EUR'),('org_name','Lipovž Active Program'),
                 ('tier_price_1','40'),('tier_price_2','70'),('tier_price_3','90'),('tier_price_4plus','110')]
     for k, v in defaults:
         if not c.execute("SELECT key FROM settings WHERE key=?", (k,)).fetchone():
@@ -896,25 +896,51 @@ def delete_contact(cid):
 @login_required
 def billing_overview(year, month):
     conn = get_db()
-    discount_pct = float(get_setting(conn,'discount_percent','20')) / 100
-    discount_days = int(get_setting(conn,'discount_days','7'))
+    discount_pct    = float(get_setting(conn,'discount_percent','20')) / 100
+    discount_days   = int(get_setting(conn,'discount_days','7'))       # ≤ this → no discount
+    discount_days_max = int(get_setting(conn,'discount_days_max','14'))# > this → individual
     month_str = f"{year:04d}-{month:02d}"
     members = [dict(r) for r in conn.execute("SELECT * FROM members WHERE status='active' ORDER BY name").fetchall()]
     result = []
     for m in members:
-        # Pridobi vse prisotnosti tega meseca za vse njegove skupine
-        rows = conn.execute("""SELECT a.*,g.fee_per_session,g.id as grp_id,g.day_of_week
+        rows = conn.execute("""SELECT a.*,g.fee_per_session,g.id as grp_id,g.sessions_per_week
             FROM attendance a JOIN groups g ON g.id=a.group_id
             WHERE a.member_id=? AND strftime('%Y-%m',a.date)=?""", (m['id'],month_str)).fetchall()
         if not rows:
             result.append({'member_id':m['id'],'name':m['name'],'scheduled':0,'attended':0,
-                'excused':0,'unexcused':0,'discount_sessions':0,'monthly_price':0,
-                'base_amount':0,'discount_amount':0,'amount_due':0,'paid':0,'balance':0,'pricing_type':'none'})
+                'excused':0,'unexcused':0,'excused_days':0,'monthly_price':0,
+                'base_amount':0,'discount_amount':0,'amount_due':0,'paid':0,'balance':0,
+                'pricing_type':'none','next_month_rec':None,
+                'member_discount_amount':0,'member_discount_label':None})
             continue
         attended = sum(1 for r in rows if r['status'] in ('present','makeup'))
-        excused = sum(1 for r in rows if r['status']=='absent_excused')
-        unexcused = sum(1 for r in rows if r['status']=='absent_unexcused')
-        # Preveri ali ima mesečno ceno
+        excused  = sum(1 for r in rows if r['status']=='absent_excused')
+        unexcused= sum(1 for r in rows if r['status']=='absent_unexcused')
+
+        # Calendar days of excused absence (group sessions by absence period)
+        period_map = {}
+        for r in rows:
+            if r['status'] == 'absent_excused':
+                end = r['absence_end_date'] or r['date']
+                period_map.setdefault(end, []).append(r['date'])
+        total_excused_days = 0
+        for end_date, session_dates in period_map.items():
+            sd = datetime.strptime(min(session_dates),'%Y-%m-%d').date()
+            ed = datetime.strptime(end_date,'%Y-%m-%d').date()
+            total_excused_days += max((ed - sd).days + 1, 1)
+
+        # Determine absence discount and next-month recommendation
+        if total_excused_days <= discount_days:
+            absence_discount_pct = 0.0
+            next_month_rec = None
+        elif total_excused_days <= discount_days_max:
+            absence_discount_pct = discount_pct
+            next_month_rec = f"-{int(discount_pct*100)}% (odsotnost {total_excused_days} dni)"
+        else:
+            absence_discount_pct = 0.0
+            next_month_rec = f"Individualni popust ({total_excused_days} dni) — nastavi ročno"
+
+        # Calculate base price
         group_ids = list({r['grp_id'] for r in rows})
         monthly_price = 0; pricing_type = 'per_session'
         for gid in group_ids:
@@ -922,40 +948,26 @@ def billing_overview(year, month):
             if mp > 0:
                 monthly_price += mp; pricing_type = 'monthly'
         if pricing_type == 'monthly':
-            # Mesečna cena — fiksna, popust samo pri daljši odsotnosti
-            discount_sessions = 0
-            for r in rows:
-                if r['status']=='absent_excused' and r['absence_end_date']:
-                    s = datetime.strptime(r['date'],'%Y-%m-%d').date()
-                    e = datetime.strptime(r['absence_end_date'],'%Y-%m-%d').date()
-                    if (e-s).days <= discount_days: discount_sessions += 1
             base = monthly_price
-            discount = discount_sessions * (monthly_price / max(len(rows),1)) * discount_pct
+            discount = round(base * absence_discount_pct, 2)
         else:
-            # Cena po sejo
-            fee = rows[0]['fee_per_session']
-            discount_sessions = 0
-            for r in rows:
-                if r['status']=='absent_excused' and r['absence_end_date']:
-                    s = datetime.strptime(r['date'],'%Y-%m-%d').date()
-                    e = datetime.strptime(r['absence_end_date'],'%Y-%m-%d').date()
-                    if (e-s).days <= discount_days: discount_sessions += 1
+            fee = rows[0]['fee_per_session'] if rows else 0
             base = attended * fee
             monthly_price = base
-            discount = discount_sessions * fee * discount_pct
+            discount = round(base * absence_discount_pct, 2)
         amount_due = base - discount
-        # Individualni popust člana
+
+        # Individual member discount (popust)
         today_str = f"{year:04d}-{month:02d}-01"
         member_disc = conn.execute("""SELECT * FROM member_discount WHERE member_id=?
             AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)""",
             (m['id'], today_str, today_str)).fetchone()
-        member_discount_amount = 0.0
-        member_discount_label = None
+        member_discount_amount = 0.0; member_discount_label = None
         if member_disc:
             if member_disc['discount_type'] == 'percent':
                 member_discount_amount = round(amount_due * float(member_disc['discount_value']) / 100, 2)
                 member_discount_label = f"-{member_disc['discount_value']}%"
-            else:  # fixed
+            else:
                 member_discount_amount = round(min(float(member_disc['discount_value']), amount_due), 2)
                 member_discount_label = f"-€{member_disc['discount_value']:.2f}"
             amount_due = round(amount_due - member_discount_amount, 2)
@@ -964,12 +976,12 @@ def billing_overview(year, month):
         result.append({
             'member_id':m['id'],'name':m['name'],'scheduled':len(rows),
             'attended':attended,'excused':excused,'unexcused':unexcused,
-            'discount_sessions':discount_sessions,'monthly_price':round(monthly_price,2),
+            'excused_days':total_excused_days,'monthly_price':round(monthly_price,2),
             'base_amount':round(base,2),'discount_amount':round(discount,2),
-            'member_discount_amount':member_discount_amount,
-            'member_discount_label':member_discount_label,
+            'member_discount_amount':member_discount_amount,'member_discount_label':member_discount_label,
             'amount_due':round(amount_due,2),'paid':round(paid,2),
-            'balance':round(amount_due-paid,2),'pricing_type':pricing_type
+            'balance':round(amount_due-paid,2),'pricing_type':pricing_type,
+            'next_month_rec':next_month_rec
         })
     conn.close(); return jsonify(result)
 

@@ -577,12 +577,12 @@ async function loadAttendanceNav() {
 
 async function openSessionHistory(gid) {
   const groups = state.groups.length ? state.groups : await api('/api/groups');
+  state.groups = groups;
   const g = groups.find(x=>x.id===gid);
   const sessions = await api(`/api/groups/${gid}/sessions`);
-  // Odpri v attendance view — pokaži seznam terminov za izbiro
   document.getElementById('attendance-title').textContent = g?g.name:'Termini';
   document.getElementById('attendance-subtitle').textContent = 'Izberi termin za urejanje';
-  document.getElementById('attendance-date-picker').value = todayISO();
+  applyGroupDateConstraint(g, todayISO());
   state.currentGroupId = gid;
   navigateTo('attendance');
   const el = document.getElementById('attendance-list');
@@ -624,13 +624,33 @@ async function toggleCancelSession(gid, sessionDate, cancel) {
 }
 
 // ── Attendance ────────────────────────────────────────────────────────────
+function applyGroupDateConstraint(g, dateStr) {
+  const picker = document.getElementById('attendance-date-picker');
+  if (!g) { picker.removeAttribute('step'); picker.removeAttribute('min'); picker.value = dateStr; return dateStr; }
+  const jsDay = (g.day_of_week + 1) % 7; // app: 0=Mon → JS: 1=Mon
+  // Anchor: earliest date in the past on the correct weekday
+  const anchor = new Date('2020-01-01T12:00:00');
+  while (anchor.getDay() !== jsDay) anchor.setDate(anchor.getDate() + 1);
+  picker.min = anchor.toISOString().split('T')[0];
+  picker.step = '7';
+  // Snap dateStr to the nearest previous correct weekday
+  const d = new Date(dateStr + 'T12:00:00');
+  if (d.getDay() !== jsDay) {
+    while (d.getDay() !== jsDay) d.setDate(d.getDate() - 1);
+    dateStr = d.toISOString().split('T')[0];
+  }
+  picker.value = dateStr;
+  return dateStr;
+}
 async function openAttendance(groupId, dateStr) {
-  state.currentGroupId = groupId; state.currentDate = dateStr; state.attendanceData = {};
+  state.currentGroupId = groupId; state.attendanceData = {};
   const groups = state.groups.length ? state.groups : await api('/api/groups');
+  state.groups = groups;
   const g = groups.find(x=>x.id===groupId);
+  dateStr = applyGroupDateConstraint(g, dateStr);
+  state.currentDate = dateStr;
   document.getElementById('attendance-title').textContent = g?g.name:'Prisotnost';
   document.getElementById('attendance-subtitle').textContent = fmtDate(dateStr);
-  document.getElementById('attendance-date-picker').value = dateStr;
   navigateTo('attendance');
   await renderAttendance();
 }
@@ -706,7 +726,18 @@ function updateField(memberId, field, value) {
   state.attendanceData[memberId][field] = value;
 }
 function changeAttendanceDate() {
-  state.currentDate = document.getElementById('attendance-date-picker').value;
+  const g = state.groups.find(x=>x.id===state.currentGroupId);
+  let date = document.getElementById('attendance-date-picker').value;
+  if (g) {
+    const jsDay = (g.day_of_week + 1) % 7;
+    const d = new Date(date + 'T12:00:00');
+    if (d.getDay() !== jsDay) {
+      while (d.getDay() !== jsDay) d.setDate(d.getDate() - 1);
+      date = d.toISOString().split('T')[0];
+      document.getElementById('attendance-date-picker').value = date;
+    }
+  }
+  state.currentDate = date;
   document.getElementById('attendance-subtitle').textContent = fmtDate(state.currentDate);
   state.attendanceData = {}; renderAttendance();
 }
@@ -772,12 +803,20 @@ async function loadReport() {
     </div>`:''}
     ${allPaid.length===data.filter(r=>r.amount_due>0).length&&allPaid.length>0?`<div class="info-box" style="background:var(--green-light);color:var(--green-dark);margin-bottom:1rem">✓ Vsi člani so poravnali obveznosti za ${monthName} ${year}.</div>`:''}`;
 
+  // Next-month recommendations
+  const recs = data.filter(r=>r.next_month_rec);
+  const recsHtml = recs.length ? `<div class="info-box" style="background:#fffbf0;color:#b45309;margin-bottom:1rem">
+    <strong>Priporočila za naslednji mesec:</strong><br>
+    ${recs.map(r=>`<div style="margin-top:.3rem">👤 <strong>${r.name}</strong>: ${r.next_month_rec}
+      ${r.next_month_rec.startsWith('-')?`<button class="btn btn-ghost btn-sm" style="margin-left:.5rem" onclick="showMemberDetail('${r.member_id}')">Nastavi popust</button>`:''}</div>`).join('')}
+  </div>` : '';
+
   // Glavna tabela
-  el.innerHTML = `<div class="table-wrap"><table class="report-table">
+  el.innerHTML = recsHtml + `<div class="table-wrap"><table class="report-table">
     <thead><tr>
       <th>Ime</th>
       <th>Prisotnost</th>
-      <th>Op. ods.</th>
+      <th>Op. ods. (dni)</th>
       <th>Neop. ods.</th>
       <th>Pop. ods.</th>
       <th>Pop. član</th>
@@ -792,7 +831,7 @@ async function loadReport() {
         ${r.member_discount_label?`<br><span class="badge badge-amber" style="margin-top:.2rem">👤 ${r.member_discount_label}</span>`:''}
       </td>
       <td>${r.attended}/${r.scheduled}</td>
-      <td>${r.excused||'—'}</td>
+      <td>${r.excused>0?`${r.excused} (${r.excused_days}d)`:'—'}</td>
       <td>${r.unexcused||'—'}</td>
       <td class="discount-val">${r.discount_amount>0?`-€ ${r.discount_amount.toFixed(2)}`:'—'}</td>
       <td class="discount-val">${(r.member_discount_amount||0)>0?`-€ ${r.member_discount_amount.toFixed(2)}`:'—'}</td>
@@ -834,16 +873,22 @@ async function loadSettings() {
   document.getElementById('settings-content').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:800px">
       <div class="detail-card">
-        <h3>Pravila popusta</h3>
-        <div class="form-group"><label>Popust (%)</label>
-          <input type="number" id="s-discount-pct" class="form-input" value="${settings.discount_percent||20}" min="0" max="100">
-          <small style="color:var(--text-3);font-size:.75rem">Popust pri opravičeni kratki odsotnosti</small>
+        <h3>Pravila odsotnosti</h3>
+        <div style="background:var(--teal-light);border-radius:8px;padding:.65rem .85rem;font-size:.8rem;line-height:1.7;margin-bottom:1rem;color:var(--text-2)">
+          <div>≤ <strong id="rule-d1">${settings.discount_days||7}</strong> dni → polna vadnina, nadomeščanja možna</div>
+          <div><strong id="rule-d1b">${settings.discount_days||7}</strong>–<strong id="rule-d2">${settings.discount_days_max||14}</strong> dni → <strong>${settings.discount_percent||20}%</strong> popust za naslednji mesec</div>
+          <div>> <strong id="rule-d2b">${settings.discount_days_max||14}</strong> dni → individualni popust (nastavi ročno)</div>
         </div>
-        <div class="form-group"><label>Meja odsotnosti (dni)</label>
+        <div class="form-group"><label>Kratka odsotnost – meja (dni)</label>
           <input type="number" id="s-discount-days" class="form-input" value="${settings.discount_days||7}" min="1" max="30">
-          <small style="color:var(--text-3);font-size:.75rem">Odsotnost krajša ali enaka temu številu dni dobi popust</small>
         </div>
-        <button class="btn btn-primary" onclick="saveDiscountSettings()">Shrani popust</button>
+        <div class="form-group"><label>Daljša odsotnost – meja (dni)</label>
+          <input type="number" id="s-discount-days-max" class="form-input" value="${settings.discount_days_max||14}" min="7" max="90">
+        </div>
+        <div class="form-group"><label>Popust za 1–2 tedna odsotnosti (%)</label>
+          <input type="number" id="s-discount-pct" class="form-input" value="${settings.discount_percent||20}" min="0" max="100">
+        </div>
+        <button class="btn btn-primary" onclick="saveDiscountSettings()">Shrani pravila</button>
       </div>
       <div class="detail-card">
         <h3>Cenik – obiski na teden</h3>
@@ -871,10 +916,12 @@ async function loadSettings() {
     </div>`;
 }
 async function saveDiscountSettings() {
-  const pct = document.getElementById('s-discount-pct').value;
-  const days = document.getElementById('s-discount-days').value;
-  await api('/api/settings','POST',{discount_percent:pct, discount_days:days});
-  showToast('Nastavitve popusta shranjene!');
+  await api('/api/settings','POST',{
+    discount_percent: document.getElementById('s-discount-pct').value,
+    discount_days: document.getElementById('s-discount-days').value,
+    discount_days_max: document.getElementById('s-discount-days-max').value,
+  });
+  showToast('Pravila odsotnosti shranjena!');
 }
 async function saveTierSettings() {
   await api('/api/settings','POST',{

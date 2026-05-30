@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
-import os, uuid, csv, io, hashlib, secrets, functools
+import sqlite3, os, uuid, csv, io, hashlib, secrets, functools
 from datetime import datetime, date, timedelta
 import calendar
 
@@ -9,7 +9,7 @@ TURSO_TOKEN = os.environ.get('TURSO_TOKEN', '')
 if TURSO_URL:
     import libsql_experimental as libsql
 else:
-    import sqlite3 as libsql
+    libsql = sqlite3
 
 app = Flask(__name__)
 app.secret_key = 'lap-terapevtska-skupina-2026-static-key'
@@ -21,8 +21,8 @@ def get_db():
     if TURSO_URL:
         conn = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
     else:
-        conn = libsql.connect(DB_PATH)
-    conn.row_factory = libsql.Row
+        conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 

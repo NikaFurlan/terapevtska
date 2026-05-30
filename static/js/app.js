@@ -846,11 +846,9 @@ async function loadReport() {
   // Povzetek kartic
   sumEl.innerHTML = `
     <div class="stats-row" style="margin-bottom:1.25rem">
-      <div class="stat-card"><div class="stat-num">${tot.attended}/${tot.scheduled}</div><div class="stat-label">Prisotnosti</div></div>
       <div class="stat-card"><div class="stat-num" style="color:var(--green)">€ ${tot.paid.toFixed(2)}</div><div class="stat-label">Plačano</div></div>
       <div class="stat-card ${tot.bal>0?'alert':''}"><div class="stat-num">€ ${tot.due.toFixed(2)}</div><div class="stat-label">Skupaj za plačilo</div></div>
       <div class="stat-card ${tot.bal>0?'warn':''}"><div class="stat-num">€ ${tot.bal.toFixed(2)}</div><div class="stat-label">Neporavnano</div></div>
-      ${tot.disc>0?`<div class="stat-card"><div class="stat-num" style="color:var(--amber)">-€ ${tot.disc.toFixed(2)}</div><div class="stat-label">Skupaj popusti</div></div>`:''}
     </div>
     ${unpaid.length?`<div class="info-box" style="background:var(--amber-light);color:var(--amber);margin-bottom:1rem">
       ⚠ <strong>${unpaid.length}</strong> član${unpaid.length===1?'':'ov'} ima neporavnane obveznosti:

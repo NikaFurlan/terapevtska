@@ -843,7 +843,7 @@ async function loadReport() {
         ${r.balance>0?`€ ${r.balance.toFixed(2)}`:'✓'}
       </span></td>
       <td style="white-space:nowrap">
-        <button class="btn btn-primary btn-sm" onclick="showPaymentModal('${r.member_id}','${r.name}')">+ Plačilo</button>
+        <button class="btn btn-primary btn-sm" onclick="showPaymentModal('${r.member_id}','${r.name}',${r.amount_due})">+ Plačilo</button>
       </td>
     </tr>`).join('')}</tbody>
     <tfoot><tr>
@@ -934,15 +934,32 @@ async function saveTierSettings() {
 }
 
 // ── Payments modal ────────────────────────────────────────────────────────
-async function showPaymentModal(mid, name) {
+async function showPaymentModal(mid, name, defaultAmount) {
   if (!name) {
     const members = state.members.length ? state.members : await api('/api/members');
     const m = members.find(x=>x.id===mid); name = m?m.name:'—';
   }
+  // Calculate suggested amount if not passed in
+  if (defaultAmount == null) {
+    const m = (state.members||[]).find(x=>x.id===mid);
+    let base = m ? (m.expected_monthly || 0) : 0;
+    if (base > 0) {
+      const disc = await api(`/api/members/${mid}/discount`);
+      if (disc) {
+        const today = todayISO();
+        if (disc.valid_from <= today && (!disc.valid_to || disc.valid_to >= today)) {
+          base = disc.discount_type === 'percent'
+            ? Math.round(base * (1 - disc.discount_value / 100) * 100) / 100
+            : Math.max(0, base - disc.discount_value);
+        }
+      }
+    }
+    defaultAmount = base || null;
+  }
   document.getElementById('pay-member-id').value = mid;
   document.getElementById('pay-member-name').value = name;
   document.getElementById('pay-date').value = todayISO();
-  document.getElementById('pay-amount').value = '';
+  document.getElementById('pay-amount').value = defaultAmount != null ? parseFloat(defaultAmount).toFixed(2) : '';
   document.getElementById('pay-notes').value = '';
   const now = new Date();
   const mSel=document.getElementById('pay-month'), ySel=document.getElementById('pay-year');

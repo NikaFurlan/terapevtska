@@ -256,7 +256,8 @@ def init_db():
     # Zaženi migracije (doda nove stolpce/tabele)
     migrate_db(conn)
     # Default settings
-    defaults = [('discount_percent','20'),('discount_days','7'),('currency','EUR'),('org_name','Lipovž Active Program')]
+    defaults = [('discount_percent','20'),('discount_days','7'),('currency','EUR'),('org_name','Lipovž Active Program'),
+                ('tier_price_1','40'),('tier_price_2','70'),('tier_price_3','90'),('tier_price_4plus','110')]
     for k, v in defaults:
         if not c.execute("SELECT key FROM settings WHERE key=?", (k,)).fetchone():
             c.execute("INSERT INTO settings VALUES (?,?)", (k, v))
@@ -584,14 +585,22 @@ def get_members():
     ph = ','.join('?' * len(ids))
 
     gm_rows = conn.execute(f"""
-        SELECT gm.member_id, g.id as gid, g.name as gname, g.day_of_week, g.time, g.fee_per_session
+        SELECT gm.member_id, g.id as gid, g.name as gname, g.day_of_week, g.time,
+               g.fee_per_session, g.sessions_per_week
         FROM group_members gm JOIN groups g ON g.id=gm.group_id
         WHERE gm.member_id IN ({ph})""", ids).fetchall()
     groups_map = {}
     for r in gm_rows:
         groups_map.setdefault(r['member_id'], []).append(
             {'id': r['gid'], 'name': r['gname'], 'day_of_week': r['day_of_week'],
-             'time': r['time'], 'fee_per_session': r['fee_per_session']})
+             'time': r['time'], 'fee_per_session': r['fee_per_session'],
+             'sessions_per_week': r['sessions_per_week']})
+
+    tier_rows = {r['key']: float(r['value']) for r in conn.execute(
+        "SELECT key,value FROM settings WHERE key IN ('tier_price_1','tier_price_2','tier_price_3','tier_price_4plus')"
+    ).fetchall()}
+    tier_prices = [tier_rows.get('tier_price_1',40.0), tier_rows.get('tier_price_2',70.0),
+                   tier_rows.get('tier_price_3',90.0), tier_rows.get('tier_price_4plus',110.0)]
 
     stats_rows = conn.execute(f"""
         SELECT member_id,
@@ -624,6 +633,9 @@ def get_members():
         m['month_unexcused'] = s['unexcused'] if s else 0
         m['last_attendance'] = last_map.get(mid)
         m['paid_this_month'] = paid_map.get(mid, 0)
+        total_visits = sum(g.get('sessions_per_week', 1) for g in m['groups'])
+        idx = min(total_visits, 4) - 1 if total_visits > 0 else -1
+        m['expected_monthly'] = tier_prices[idx] if idx >= 0 else 0
     conn.close(); return jsonify(members)
 
 @app.route('/api/members', methods=['POST'])

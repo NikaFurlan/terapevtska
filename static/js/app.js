@@ -146,7 +146,7 @@ async function loadMembers() {
         <td>${m.phone?`<div>📞 ${m.phone}</div>`:''} ${m.email?`<div style="font-size:.78rem;color:var(--text-3)">✉ ${m.email}</div>`:''}</td>
         <td>${(m.groups||[]).map(g=>`<span class="badge badge-green">${g.name}</span>`).join(' ')}</td>
         <td><div style="display:flex;gap:.3rem;flex-wrap:wrap"><span class="badge badge-green">✓ ${m.month_attended}</span>${m.month_excused>0?`<span class="badge badge-amber">○ ${m.month_excused}</span>`:''} ${m.month_unexcused>0?`<span class="badge badge-red">✗ ${m.month_unexcused}</span>`:''}</div><div style="font-size:.72rem;color:var(--text-3);margin-top:.2rem">Zadnji: ${last}</div></td>
-        <td><span style="font-weight:700;color:${m.paid_this_month>0?'var(--green)':'var(--red)'};font-size:.9rem">€ ${m.paid_this_month.toFixed(2)}</span></td>
+        <td><span style="font-weight:700;color:${m.paid_this_month>=m.expected_monthly&&m.expected_monthly>0?'var(--green)':m.paid_this_month>0?'var(--amber,#e6a817)':'var(--red)'};font-size:.9rem">€ ${m.paid_this_month.toFixed(2)}</span>${m.expected_monthly>0?`<br><small style="color:var(--text-3);font-size:.72rem">/ € ${m.expected_monthly.toFixed(2)}</small>`:''}</td>
         <td><span class="badge ${m.status==='active'?'badge-green':'badge-gray'}">${m.status==='active'?'Aktiven':'Neaktiven'}</span></td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="showMemberDetail('${m.id}')">Detail</button>
@@ -191,11 +191,12 @@ async function deleteMember(mid, name) {
   await api(`/api/members/${mid}`,'DELETE'); showToast('Član odstranjen.'); loadMembers();
 }
 async function showMemberModal(id) {
-  const groups = await api('/api/groups'); state.groups = groups;
+  const [groups, settings] = await Promise.all([api('/api/groups'), api('/api/settings')]);
+  state.groups = groups; state.priceTiers = settings;
   document.getElementById('member-id').value = id||'';
   document.getElementById('modal-member-title').textContent = id?'Uredi člana':'Nov član';
   const checkEl = document.getElementById('member-groups-check');
-  checkEl.innerHTML = groups.map(g=>`<label class="checkbox-label"><input type="checkbox" name="mg" value="${g.id}"> ${g.name}</label>`).join('');
+  checkEl.innerHTML = groups.map(g=>`<label class="checkbox-label"><input type="checkbox" name="mg" value="${g.id}" onchange="updateMemberPricePreview()"> ${g.name}</label>`).join('');
   const fields = ['name','email','phone','dob','address','notes'];
   fields.forEach(f => document.getElementById(`member-${f}`).value = '');
   document.getElementById('member-status').value = 'active';
@@ -213,7 +214,22 @@ async function showMemberModal(id) {
       checkEl.querySelectorAll('input').forEach(cb => cb.checked = gids.includes(cb.value));
     }
   }
+  updateMemberPricePreview();
   openModal('modal-member');
+}
+function updateMemberPricePreview() {
+  const checked = [...document.querySelectorAll('#member-groups-check input:checked')].map(cb=>cb.value);
+  const totalVisits = (state.groups||[]).filter(g=>checked.includes(g.id))
+    .reduce((sum,g)=>sum+(g.sessions_per_week||1),0);
+  const t = state.priceTiers||{};
+  const prices = [parseFloat(t.tier_price_1||40),parseFloat(t.tier_price_2||70),
+                  parseFloat(t.tier_price_3||90),parseFloat(t.tier_price_4plus||110)];
+  const el = document.getElementById('member-price-preview');
+  if (!el) return;
+  if (totalVisits===0) { el.style.display='none'; return; }
+  const price = prices[Math.min(totalVisits,4)-1];
+  el.textContent = `${totalVisits}× na teden → € ${price.toFixed(2)} / mesec`;
+  el.style.display='block';
 }
 async function saveMember() {
   const id = document.getElementById('member-id').value;
@@ -274,6 +290,10 @@ async function loadMemberOverview(m) {
           <div>○ <strong>${m.month_excused}</strong> opravičenih</div>
           <div>✗ <strong>${m.month_unexcused}</strong> neopravičenih</div>
         </div>
+        ${m.expected_monthly>0?`<div style="margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--border)">
+          <div style="font-size:.75rem;color:var(--text-3);margin-bottom:.15rem">Mesečnina</div>
+          <div style="font-weight:700;font-size:1.05rem;color:${m.paid_this_month>=m.expected_monthly?'var(--green)':'var(--red)'}">€ ${m.paid_this_month.toFixed(2)} <span style="font-weight:400;font-size:.8rem;color:var(--text-3)">/ € ${m.expected_monthly.toFixed(2)}</span></div>
+        </div>`:''}
         ${discBadge}
       </div>
       <div class="detail-card">
@@ -826,13 +846,20 @@ async function loadSettings() {
         <button class="btn btn-primary" onclick="saveDiscountSettings()">Shrani popust</button>
       </div>
       <div class="detail-card">
-        <h3>Cena po skupinah</h3>
-        ${groups.map(g=>`
-          <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.6rem">
-            <span style="min-width:150px;font-weight:600;font-size:.88rem">${g.name}</span>
-            <input type="number" class="form-input" style="width:80px" value="${g.fee_per_session}" id="fee-${g.id}" step="0.5">
-            <button class="btn btn-secondary btn-sm" onclick="updateFee('${g.id}')">Shrani</button>
-          </div>`).join('')}
+        <h3>Cenik – obiski na teden</h3>
+        <div class="form-group"><label>1× na teden (€/mesec)</label>
+          <input type="number" id="s-tier-1" class="form-input" value="${parseFloat(settings.tier_price_1||40).toFixed(2)}" min="0" step="0.5">
+        </div>
+        <div class="form-group"><label>2× na teden (€/mesec)</label>
+          <input type="number" id="s-tier-2" class="form-input" value="${parseFloat(settings.tier_price_2||70).toFixed(2)}" min="0" step="0.5">
+        </div>
+        <div class="form-group"><label>3× na teden (€/mesec)</label>
+          <input type="number" id="s-tier-3" class="form-input" value="${parseFloat(settings.tier_price_3||90).toFixed(2)}" min="0" step="0.5">
+        </div>
+        <div class="form-group"><label>4× ali več na teden (€/mesec)</label>
+          <input type="number" id="s-tier-4" class="form-input" value="${parseFloat(settings.tier_price_4plus||110).toFixed(2)}" min="0" step="0.5">
+        </div>
+        <button class="btn btn-primary" onclick="saveTierSettings()">Shrani cenik</button>
       </div>
       <div class="detail-card">
         <h3>Navigacija skupin & članov</h3>
@@ -849,11 +876,14 @@ async function saveDiscountSettings() {
   await api('/api/settings','POST',{discount_percent:pct, discount_days:days});
   showToast('Nastavitve popusta shranjene!');
 }
-async function updateFee(gid) {
-  const g = state.groups.find(x=>x.id===gid); if (!g) return;
-  const fee = parseFloat(document.getElementById(`fee-${gid}`).value);
-  await api(`/api/groups/${gid}`,'PUT',{...g, fee_per_session:fee});
-  showToast('Cena posodobljena.');
+async function saveTierSettings() {
+  await api('/api/settings','POST',{
+    tier_price_1: document.getElementById('s-tier-1').value,
+    tier_price_2: document.getElementById('s-tier-2').value,
+    tier_price_3: document.getElementById('s-tier-3').value,
+    tier_price_4plus: document.getElementById('s-tier-4').value,
+  });
+  showToast('Cenik shranjen!');
 }
 
 // ── Payments modal ────────────────────────────────────────────────────────

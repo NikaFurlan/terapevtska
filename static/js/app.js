@@ -67,7 +67,7 @@ function groupCard(g) {
     ${g.attendance_done?'<span class="done-badge">✓ Vpisano</span>':''}
     <div class="card-day">${g.day_name||DAYS_SL[g.day_of_week]}</div>
     <div class="card-name">${g.name}</div>
-    <div class="card-meta"><span>🕐 ${g.time}</span><span>👥 ${g.member_count||0}</span><span>€ ${(g.fee_per_session||30).toFixed(2)}</span></div>
+    <div class="card-meta"><span>🕐 ${g.time}</span><span>👥 ${g.member_count||0} / ${g.max_members||12}</span></div>
   </div>`;
 }
 
@@ -80,7 +80,7 @@ async function loadGroups() {
     <div class="group-card">
       <div class="card-day">${DAYS_SL[g.day_of_week]}</div>
       <div class="card-name">${g.name}</div>
-      <div class="card-meta"><span>🕐 ${g.time}</span><span>👥 ${g.member_count}</span><span>€ ${g.fee_per_session.toFixed(2)}</span></div>
+      <div class="card-meta"><span>🕐 ${g.time}</span><span>👥 ${g.member_count} / ${g.max_members||12}</span></div>
       <div style="display:flex;gap:.4rem;margin-top:.85rem;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="openAttendance('${g.id}','${todayISO()}');event.stopPropagation()">Prisotnost</button>
         <button class="btn btn-ghost btn-sm" onclick="showGroupModal('${g.id}');event.stopPropagation()">Uredi</button>
@@ -97,14 +97,12 @@ function showGroupModal(id) {
       document.getElementById('group-name').value=g.name;
       document.getElementById('group-day').value=g.day_of_week;
       document.getElementById('group-time').value=g.time;
-      document.getElementById('group-fee').value=g.fee_per_session;
-      document.getElementById('group-spw').value=g.sessions_per_week||1;
+      document.getElementById('group-max-members').value=g.max_members||12;
     }
   } else {
     document.getElementById('group-name').value='';
     document.getElementById('group-time').value='08:00';
-    document.getElementById('group-fee').value='30';
-    document.getElementById('group-spw').value='1';
+    document.getElementById('group-max-members').value='12';
   }
   openModal('modal-group');
 }
@@ -114,8 +112,7 @@ async function saveGroup() {
     name: document.getElementById('group-name').value,
     day_of_week: parseInt(document.getElementById('group-day').value),
     time: document.getElementById('group-time').value,
-    fee_per_session: parseFloat(document.getElementById('group-fee').value),
-    sessions_per_week: parseInt(document.getElementById('group-spw').value),
+    max_members: parseInt(document.getElementById('group-max-members').value),
   };
   if (id) await api(`/api/groups/${id}`,'PUT',data); else await api('/api/groups','POST',data);
   closeModal(); loadGroups(); showToast('Skupina shranjena.');
@@ -130,7 +127,7 @@ async function loadMembers() {
   const members = await api('/api/members'); state.members = members;
   const el = document.getElementById('members-list');
   if (!members.length) { el.innerHTML='<p class="empty-state"><span class="empty-icon">◉</span>Ni članov.</p>'; return; }
-  if (window.innerWidth <= 768) {
+  if (window.innerWidth <= 1024) {
     el.innerHTML = renderMembersMobile(members);
     return;
   }
@@ -983,18 +980,18 @@ function toggleMobileMenu() {
   const btn = document.getElementById('mobile-menu-btn');
   const isOpen = sidebar.classList.toggle('open');
   overlay.classList.toggle('open', isOpen);
-  btn.textContent = isOpen ? '✕' : '☰';
+  btn.classList.toggle('is-open', isOpen);
 }
 function closeMobileMenu() {
   document.querySelector('.sidebar').classList.remove('open');
   document.getElementById('sidebar-overlay').classList.remove('open');
-  document.getElementById('mobile-menu-btn').textContent = '☰';
+  document.getElementById('mobile-menu-btn').classList.remove('is-open');
 }
 
 // Zapri meni po navigaciji na mobilu
 document.querySelectorAll('.nav-links a').forEach(a => {
   a.addEventListener('click', () => {
-    if (window.innerWidth <= 768) closeMobileMenu();
+    if (window.innerWidth <= 1024) closeMobileMenu();
   });
 });
 

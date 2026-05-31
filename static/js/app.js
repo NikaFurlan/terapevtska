@@ -4,12 +4,21 @@ const MONTHS_SL = ['januar','februar','marec','april','maj','junij','julij','avg
 const DAYS_SL = ['Ponedeljek','Torek','Sreda','Četrtek','Petek','Sobota','Nedelja'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+let _pendingRequests = 0;
+const _baseTitle = 'LAP – Terapevtske skupine';
 async function api(path, method='GET', body=null) {
-  const opts = { method, headers: {'Content-Type':'application/json'} };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(path, opts);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  _pendingRequests++;
+  if (_pendingRequests === 1) document.title = '⏳ Nalagam… – LAP';
+  try {
+    const opts = { method, headers: {'Content-Type':'application/json'} };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  } finally {
+    _pendingRequests--;
+    if (_pendingRequests === 0) document.title = _baseTitle;
+  }
 }
 function fmtDate(iso) { if (!iso) return '—'; const [y,m,d]=iso.split('-'); return `${d}.${m}.${y}`; }
 function todayISO() { return new Date().toISOString().split('T')[0]; }

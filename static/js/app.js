@@ -40,6 +40,15 @@ function navigateTo(view) {
 }
 document.querySelectorAll('.nav-links a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); navigateTo(a.dataset.view); }));
 
+// Preload members + groups in background so first click feels instant
+(async () => {
+  try {
+    const [members, groups] = await Promise.all([api('/api/members'), api('/api/groups')]);
+    if (!state.members.length) state.members = members;
+    if (!state.groups.length) state.groups = groups;
+  } catch(e) {}
+})();
+
 // Set avatar initial
 const uname = document.getElementById('sidebar-avatar');
 if (uname) uname.textContent = (uname.closest('.sidebar').querySelector('.sidebar-username')?.textContent||'?')[0].toUpperCase();
@@ -129,7 +138,9 @@ async function deleteGroup(id) {
 
 // ── Members ───────────────────────────────────────────────────────────────
 async function loadMembers() {
-  const members = await api('/api/members'); state.members = members;
+  if (state.members.length) renderMembersList(state.members); // instant from cache
+  const members = await api('/api/members');
+  state.members = members;
   renderMembersList(members);
 }
 
@@ -298,12 +309,7 @@ async function showMemberDetail(mid) {
 }
 async function loadMemberOverview(m) {
   const age = m.date_of_birth ? Math.floor((new Date()-new Date(m.date_of_birth))/31557600000) : null;
-  const discs = await api(`/api/members/${m.id}/discount`);
-  const today = todayISO();
-  const activeDiscs = (discs||[]).filter(d => d.valid_from <= today && (!d.valid_to || d.valid_to >= today));
-  const discBadge = activeDiscs.length
-    ? `<div style="margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.3rem">${activeDiscs.map(d=>`<span class="badge badge-amber">👤 ${d.discount_type==='percent'?d.discount_value+'%':'€ '+parseFloat(d.discount_value).toFixed(2)}${d.reason?' — '+d.reason:''}</span>`).join('')}</div>`
-    : '';
+  // Render immediately from cached member data — no API wait
   document.getElementById('member-tab-overview').innerHTML = `
     <div class="detail-grid">
       <div class="detail-card">
@@ -318,7 +324,7 @@ async function loadMemberOverview(m) {
           <div style="font-size:.75rem;color:var(--text-3);margin-bottom:.15rem">Mesečnina</div>
           <div style="font-weight:700;font-size:1.05rem;color:${m.paid_this_month>=m.expected_monthly?'var(--green)':'var(--red)'}">€ ${m.paid_this_month.toFixed(2)} <span style="font-weight:400;font-size:.8rem;color:var(--text-3)">/ € ${m.expected_monthly.toFixed(2)}</span></div>
         </div>`:''}
-        ${discBadge}
+        <div id="disc-badges-${m.id}"></div>
       </div>
       <div class="detail-card">
         <h3>Osebni podatki</h3>
@@ -341,12 +347,22 @@ async function loadMemberOverview(m) {
         </div>
       </div>
     </div>`;
+  // Fetch discounts in background and update badge area when ready
+  const discs = await api(`/api/members/${m.id}/discount`);
+  const today = todayISO();
+  const activeDiscs = (discs||[]).filter(d => d.valid_from <= today && (!d.valid_to || d.valid_to >= today));
+  const badgeEl = document.getElementById(`disc-badges-${m.id}`);
+  if (badgeEl && activeDiscs.length) {
+    badgeEl.innerHTML = `<div style="margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.3rem">${activeDiscs.map(d=>`<span class="badge badge-amber">👤 ${d.discount_type==='percent'?d.discount_value+'%':'€ '+parseFloat(d.discount_value).toFixed(2)}${d.reason?' — '+d.reason:''}</span>`).join('')}</div>`;
+  }
 }
 async function switchMemberTab(tab, btn) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById(`member-tab-${tab}`).classList.add('active');
+  const panel = document.getElementById(`member-tab-${tab}`);
+  panel.classList.add('active');
+  panel.innerHTML = '<div class="loading-text"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite"></span> Nalagam…</div>';
   const mid = state.currentMemberId;
   if (tab==='history') await loadMemberHistory(mid);
   else if (tab==='payments') await loadMemberPaymentsTab(mid);

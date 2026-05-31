@@ -1,4 +1,8 @@
 /* ── LAP Design System ──────────────────────────────────────────────────── */
+@keyframes shimmer { 0%{opacity:.45} 50%{opacity:.9} 100%{opacity:.45} }
+@keyframes spin { to{transform:rotate(360deg)} }
+.skeleton { background:var(--border);border-radius:6px;animation:shimmer 1.2s ease-in-out infinite; }
+.loading-text { color:var(--text-3);font-size:.88rem;padding:1.25rem;display:flex;align-items:center;gap:.5rem; }
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap');
 
 :root {

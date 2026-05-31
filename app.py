@@ -716,7 +716,7 @@ def delete_member(mid):
     conn = get_db()
     m = conn.execute("SELECT name FROM members WHERE id=?", (mid,)).fetchone()
     audit(conn,'DELETE','members',mid,m['name'] if m else '')
-    for tbl in ['group_members','attendance','payments','contacts','member_pricing']:
+    for tbl in ['group_members','attendance','payments','contacts','member_pricing','member_discount','member_comments']:
         conn.execute(f"DELETE FROM {tbl} WHERE member_id=?", (mid,))
     conn.execute("DELETE FROM members WHERE id=?", (mid,))
     conn.commit(); conn.close(); return jsonify({'ok':True})

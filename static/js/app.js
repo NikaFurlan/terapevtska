@@ -1,5 +1,5 @@
 // ── State ─────────────────────────────────────────────────────────────────
-const state = { groups: [], members: [], currentGroupId: null, currentDate: null, attendanceData: {}, currentMemberId: null, makeupCandidates: [], guestData: {} };
+const state = { groups: [], members: [], currentGroupId: null, currentDate: null, attendanceData: {}, currentMemberId: null, makeupCandidates: [], guestData: {}, persistedGuestIds: new Set() };
 const MONTHS_SL = ['januar','februar','marec','april','maj','junij','julij','avgust','september','oktober','november','december'];
 const DAYS_SL = ['Ponedeljek','Torek','Sreda','Četrtek','Petek','Sobota','Nedelja'];
 
@@ -749,7 +749,7 @@ function applyGroupDateConstraint(g, dateStr) {
   return dateStr;
 }
 async function openAttendance(groupId, dateStr) {
-  state.currentGroupId = groupId; state.attendanceData = {}; state.guestData = {}; state.makeupCandidates = [];
+  state.currentGroupId = groupId; state.attendanceData = {}; state.guestData = {}; state.makeupCandidates = []; state.persistedGuestIds = new Set();
   const groups = state.groups.length ? state.groups : await api('/api/groups');
   state.groups = groups;
   const g = groups.find(x=>x.id===groupId);
@@ -789,6 +789,7 @@ async function renderAttendance() {
         makeup_group_id: att?(att.makeup_group_id||''):''
       };
       state.attendanceData[g.id] = state.guestData[g.id];
+      state.persistedGuestIds.add(g.id);
     }
   });
   if (!state.makeupCandidates.length) {
@@ -898,7 +899,8 @@ function addGuestMember() {
   const groupEl = document.getElementById('guest-makeup-group-id');
   const selectedGroupId = groupEl?.value || '';
   const makeupGroupId = selectedGroupId || c.groups[0]?.id || '';
-  const d = { status:'makeup', absence_end_date:'', notes:'', makeup_for_date: makeupDate, makeup_group_id: makeupGroupId };
+  const notes = c.over_quota ? `Presežena kvota (${c.quota_used}/${c.quota_total} obiskov ta mesec)` : '';
+  const d = { status:'makeup', absence_end_date:'', notes, makeup_for_date: makeupDate, makeup_group_id: makeupGroupId };
   state.guestData[memberId] = d;
   state.attendanceData[memberId] = d;
   const warning = c.over_quota
@@ -907,7 +909,13 @@ function addGuestMember() {
   refreshGuestSection(warning);
 }
 
-function removeGuestMember(memberId) {
+async function removeGuestMember(memberId) {
+  if (state.persistedGuestIds.has(memberId)) {
+    try {
+      await api(`/api/attendance/${state.currentGroupId}/${memberId}/${state.currentDate}`, 'DELETE');
+      state.persistedGuestIds.delete(memberId);
+    } catch(e) { showToast('Napaka pri brisanju!', 'err'); return; }
+  }
   delete state.guestData[memberId];
   delete state.attendanceData[memberId];
   refreshGuestSection();
@@ -959,7 +967,7 @@ function changeAttendanceDate() {
   }
   state.currentDate = date;
   document.getElementById('attendance-subtitle').textContent = fmtDate(state.currentDate);
-  state.attendanceData = {}; state.guestData = {}; state.makeupCandidates = []; renderAttendance();
+  state.attendanceData = {}; state.guestData = {}; state.makeupCandidates = []; state.persistedGuestIds = new Set(); renderAttendance();
 }
 async function saveAttendance() {
   for (const [memberId, d] of Object.entries(state.guestData)) {

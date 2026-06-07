@@ -877,6 +877,14 @@ def save_attendance():
     audit(conn,'SAVE_ATTENDANCE','attendance',d['group_id'],d['date'])
     conn.commit(); conn.close(); return jsonify({'ok':True})
 
+@app.route('/api/attendance/<gid>/<mid>/<session_date>', methods=['DELETE'])
+@login_required
+def delete_attendance_record(gid, mid, session_date):
+    conn = get_db()
+    conn.execute("DELETE FROM attendance WHERE group_id=? AND member_id=? AND date=?", (gid, mid, session_date))
+    audit(conn,'DELETE','attendance',f"{mid}",f"{gid} {session_date}")
+    conn.commit(); conn.close(); return jsonify({'ok':True})
+
 @app.route('/api/groups/<gid>/makeup-candidates/<int:year>/<int:month>/<int:day>')
 @login_required
 def get_makeup_candidates(gid, year, month, day):

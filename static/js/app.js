@@ -1,5 +1,5 @@
 // ── State ─────────────────────────────────────────────────────────────────
-const state = { groups: [], members: [], currentGroupId: null, currentDate: null, attendanceData: {}, currentMemberId: null };
+const state = { groups: [], members: [], currentGroupId: null, currentDate: null, attendanceData: {}, currentMemberId: null, makeupCandidates: [], guestData: {} };
 const MONTHS_SL = ['januar','februar','marec','april','maj','junij','julij','avgust','september','oktober','november','december'];
 const DAYS_SL = ['Ponedeljek','Torek','Sreda','Četrtek','Petek','Sobota','Nedelja'];
 
@@ -749,7 +749,7 @@ function applyGroupDateConstraint(g, dateStr) {
   return dateStr;
 }
 async function openAttendance(groupId, dateStr) {
-  state.currentGroupId = groupId; state.attendanceData = {};
+  state.currentGroupId = groupId; state.attendanceData = {}; state.guestData = {}; state.makeupCandidates = [];
   const groups = state.groups.length ? state.groups : await api('/api/groups');
   state.groups = groups;
   const g = groups.find(x=>x.id===groupId);
@@ -763,14 +763,14 @@ async function openAttendance(groupId, dateStr) {
 async function renderAttendance() {
   const data = await api(`/api/attendance/${state.currentGroupId}/${state.currentDate}`);
   const el = document.getElementById('attendance-list');
-  const members = data.members || data; // backwards compat
+  const members = data.members || data;
+  const guests = data.guests || [];
   const sessInfo = data.session_info;
   if (sessInfo && sessInfo.cancelled) {
     el.innerHTML = `<div class="info-box" style="background:var(--red-light);color:var(--red)">🚫 Ta termin je bil odpovedan${sessInfo.cancel_reason?`: ${sessInfo.cancel_reason}`:''}.
       <button class="btn btn-amber btn-sm" style="margin-left:1rem" onclick="toggleCancelSession('${state.currentGroupId}','${state.currentDate}',0)">Obnovi termin</button></div>`;
     return;
   }
-  if (!members.length) { el.innerHTML='<p class="empty-state"><span class="empty-icon">◉</span>Ni aktivnih članov.</p>'; return; }
   members.forEach(m => {
     const att = m.attendance;
     if (!state.attendanceData[m.id]) state.attendanceData[m.id] = {
@@ -779,10 +779,28 @@ async function renderAttendance() {
       makeup_group_id: att?(att.makeup_group_id||''):''
     };
   });
-  // Opozorilo za pretekle termine
+  guests.forEach(g => {
+    const att = g.attendance;
+    if (!state.guestData[g.id]) {
+      state.guestData[g.id] = {
+        status: att?att.status:'makeup', absence_end_date:'',
+        notes: att?(att.notes||''):'',
+        makeup_for_date: att?(att.makeup_for_date||''):'',
+        makeup_group_id: att?(att.makeup_group_id||''):''
+      };
+      state.attendanceData[g.id] = state.guestData[g.id];
+    }
+  });
+  if (!state.makeupCandidates.length) {
+    const [year, month] = state.currentDate.split('-');
+    const [,, day] = state.currentDate.split('-');
+    try { state.makeupCandidates = await api(`/api/groups/${state.currentGroupId}/makeup-candidates/${year}/${parseInt(month)}/${parseInt(day)}`); }
+    catch(e) { state.makeupCandidates = []; }
+  }
   const isPast = new Date(state.currentDate) < new Date(new Date().toDateString());
-  el.innerHTML = (isPast?`<div class="info-box" style="background:var(--amber-light);color:var(--amber);margin-bottom:.85rem">📅 Urejate pretekli termin: ${fmtDate(state.currentDate)}</div>`:'')+
-    members.map(m=>renderAttRow(m)).join('');
+  const banner = isPast?`<div class="info-box" style="background:var(--amber-light);color:var(--amber);margin-bottom:.85rem">📅 Urejate pretekli termin: ${fmtDate(state.currentDate)}</div>`:'';
+  const memberRows = members.length ? members.map(m=>renderAttRow(m)).join('') : '<p class="empty-state"><span class="empty-icon">◉</span>Ni aktivnih članov.</p>';
+  el.innerHTML = banner + memberRows + renderGuestSection();
 }
 function renderAttRow(m) {
   const d = state.attendanceData[m.id]||{status:'present'};
@@ -831,6 +849,96 @@ function updateField(memberId, field, value) {
   if (!state.attendanceData[memberId]) state.attendanceData[memberId]={};
   state.attendanceData[memberId][field] = value;
 }
+
+function renderGuestSection(warning='') {
+  const addedIds = new Set(Object.keys(state.guestData));
+  const available = state.makeupCandidates.filter(c=>!addedIds.has(c.id));
+  const opts = available.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const rows = state.makeupCandidates.filter(c=>addedIds.has(c.id)).map(c=>{
+    const d = state.guestData[c.id]||{};
+    const dateLabel = d.makeup_for_date ? ` — nadomešča ${fmtDate(d.makeup_for_date)}` : '';
+    return `<div class="guest-row-simple" id="att-row-${c.id}">
+      <span class="att-name">${c.name}<span class="guest-tag">gost</span>${dateLabel}</span>
+      <button class="btn btn-danger btn-sm" onclick="removeGuestMember('${c.id}')">✕</button>
+    </div>`;
+  }).join('');
+  return `<div class="guest-section-wrapper">
+    <div class="guest-section-header"><span class="section-label" style="margin:0">Nadomeščanja</span></div>
+    ${rows}
+    <div class="guest-add-bar">
+      <select id="guest-candidate-select" class="form-input guest-select" onchange="onGuestCandidateChange()">
+        <option value="">— Izberi člana —</option>${opts}
+      </select>
+      <input type="date" id="guest-makeup-date" class="form-input" style="width:auto" title="Datum termina ki ga nadomešča">
+      <button class="btn btn-secondary" onclick="addGuestMember()">+ Dodaj</button>
+    </div>
+    <div id="guest-date-suggestions" class="guest-date-suggestions"></div>
+    ${warning?`<div class="guest-quota-warning">${warning}</div>`:''}
+  </div>`;
+}
+
+function refreshGuestSection(warning='') {
+  const el = document.getElementById('attendance-list');
+  const wrapper = el.querySelector('.guest-section-wrapper');
+  const html = renderGuestSection(warning);
+  if (wrapper) wrapper.outerHTML = html;
+  else el.insertAdjacentHTML('beforeend', html);
+}
+
+function addGuestMember() {
+  const sel = document.getElementById('guest-candidate-select');
+  const dateEl = document.getElementById('guest-makeup-date');
+  const memberId = sel.value;
+  const makeupDate = dateEl ? dateEl.value : '';
+  if (!memberId) { showToast('Izberi člana!', 'err'); return; }
+  if (!makeupDate) { showToast('Vnesi datum termina ki ga nadomešča!', 'err'); return; }
+  const c = state.makeupCandidates.find(x=>x.id===memberId);
+  if (!c) return;
+  const d = { status:'makeup', absence_end_date:'', notes:'', makeup_for_date: makeupDate, makeup_group_id: c.groups[0]?.id||'' };
+  state.guestData[memberId] = d;
+  state.attendanceData[memberId] = d;
+  const warning = c.over_quota
+    ? `Opozorilo: ${c.name} je presegel/a mesečno kvoto (${c.quota_used}/${c.quota_total} obiskov ta mesec). Dodate lahko kljub temu.`
+    : '';
+  refreshGuestSection(warning);
+}
+
+function removeGuestMember(memberId) {
+  delete state.guestData[memberId];
+  delete state.attendanceData[memberId];
+  refreshGuestSection();
+}
+
+function updateGuestField(memberId, field, value) {
+  if (!state.guestData[memberId]) state.guestData[memberId]={};
+  state.guestData[memberId][field] = value;
+  if (state.attendanceData[memberId]) state.attendanceData[memberId][field] = value;
+}
+
+function onGuestCandidateChange() {
+  const sel = document.getElementById('guest-candidate-select');
+  const suggestEl = document.getElementById('guest-date-suggestions');
+  if (!suggestEl) return;
+  const memberId = sel.value;
+  if (!memberId) { suggestEl.innerHTML = ''; return; }
+  const c = state.makeupCandidates.find(x=>x.id===memberId);
+  if (!c) { suggestEl.innerHTML = ''; return; }
+  const available = (c.suggested_dates || []);
+  if (!available.length) {
+    suggestEl.innerHTML = `<span style="font-size:.78rem;color:var(--text-3)">Ni zamujenih terminov ta teden.</span>`;
+    return;
+  }
+  const btns = available.map(s =>
+    `<button type="button" class="btn btn-ghost btn-sm" onclick="selectGuestDate('${s.date}')">${s.group_name}: ${fmtDate(s.date)}</button>`
+  ).join('');
+  suggestEl.innerHTML = `<span style="font-size:.78rem;color:var(--text-3);margin-right:.4rem">Nadomešča:</span>${btns}`;
+}
+
+function selectGuestDate(dateStr) {
+  const dateEl = document.getElementById('guest-makeup-date');
+  if (dateEl) dateEl.value = dateStr;
+}
+
 function changeAttendanceDate() {
   const g = state.groups.find(x=>x.id===state.currentGroupId);
   let date = document.getElementById('attendance-date-picker').value;
@@ -845,9 +953,15 @@ function changeAttendanceDate() {
   }
   state.currentDate = date;
   document.getElementById('attendance-subtitle').textContent = fmtDate(state.currentDate);
-  state.attendanceData = {}; renderAttendance();
+  state.attendanceData = {}; state.guestData = {}; state.makeupCandidates = []; renderAttendance();
 }
 async function saveAttendance() {
+  for (const [memberId, d] of Object.entries(state.guestData)) {
+    if (!d.makeup_for_date || !d.makeup_group_id) {
+      const name = (state.makeupCandidates.find(c=>c.id===memberId)||{}).name||memberId;
+      showToast(`Gost ${name}: izberite datum in skupino nadomeščanja!`, 'err'); return;
+    }
+  }
   const records = Object.entries(state.attendanceData).map(([member_id,d])=>({member_id,...d}));
   await api('/api/attendance','POST',{group_id:state.currentGroupId,date:state.currentDate,records});
   showToast('Prisotnost shranjena!');

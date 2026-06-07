@@ -594,6 +594,39 @@ tbody tr:last-child { border-bottom: none; }
 
 /* bottom-nav removed */
 
+/* ── Guest / Makeup Visitor Section ─────────────────────────────────────── */
+.guest-section-wrapper { margin-top: 1.5rem; }
+.guest-section-header {
+  display: flex; align-items: center; gap: .75rem;
+  padding-bottom: .6rem; border-bottom: 2px solid var(--border); margin-bottom: .5rem;
+}
+.guest-row-simple {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .6rem .85rem; margin-bottom: .4rem;
+  border-left: 3px solid var(--blue); background: var(--blue-light);
+  border-radius: var(--radius-sm);
+}
+.guest-tag {
+  display: inline-block; font-size: .6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; background: var(--blue); color: #fff;
+  border-radius: 3px; padding: .1rem .35rem; vertical-align: middle; margin-left: .35rem;
+}
+.quota-badge { font-size: .68rem; font-weight: 600; padding: .18rem .5rem; border-radius: 20px; display: inline-block; }
+.guest-add-bar {
+  display: flex; gap: .6rem; align-items: center; margin-top: .75rem; flex-wrap: wrap;
+}
+.guest-select { flex: 1; min-width: 220px; }
+.guest-date-suggestions { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; min-height: 1.5rem; }
+.guest-quota-warning {
+  background: var(--amber-light); color: var(--amber);
+  border: 1px solid var(--amber); border-radius: var(--radius-sm);
+  padding: .45rem .75rem; font-size: .83rem; font-weight: 500; margin-top: .45rem;
+}
+@media (max-width: 600px) {
+  .guest-add-bar { flex-direction: column; align-items: stretch; }
+  .guest-select { min-width: unset; width: 100%; }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    MOBILE ADDITIONS — supplementary rules
    ═══════════════════════════════════════════════════════════════════════════ */

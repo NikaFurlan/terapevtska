@@ -221,7 +221,7 @@ async function doLogin() {
   });
   const data = await r.json();
   if (data.ok) {
-    window.location.href = '/';
+    window.location.href = '/app';
   } else {
     errEl.textContent = data.error || 'Napaka pri prijavi.';
     errEl.classList.add('show');

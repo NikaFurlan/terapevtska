@@ -466,6 +466,10 @@ def get_audit():
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 @app.route('/')
+def root():
+    return redirect(url_for('login_page'))
+
+@app.route('/app')
 @login_required
 def index():
     return render_template('index.html', username=session.get('username'), role=session.get('role'))
@@ -828,11 +832,17 @@ def get_attendance(gid, session_date):
         WHERE gm.group_id=? AND m.status='active' ORDER BY m.name""", (gid,)).fetchall()]
     records = {r['member_id']:dict(r) for r in conn.execute(
         "SELECT * FROM attendance WHERE group_id=? AND date=?", (gid,session_date)).fetchall()}
-    # Pridobi info o terminu (odpoved ipd.)
     sess_info = conn.execute("SELECT * FROM sessions WHERE group_id=? AND session_date=?", (gid,session_date)).fetchone()
+    member_ids_in_group = {m['id'] for m in members}
+    guest_ids = [mid for mid in records if mid not in member_ids_in_group]
+    guests = []
+    if guest_ids:
+        ph = ','.join('?'*len(guest_ids))
+        for gm in conn.execute(f"SELECT * FROM members WHERE id IN ({ph})", guest_ids).fetchall():
+            gd = dict(gm); gd['attendance'] = records.get(gd['id']); guests.append(gd)
     conn.close()
     for m in members: m['attendance'] = records.get(m['id'])
-    return jsonify({'members':members, 'session_info': dict(sess_info) if sess_info else None})
+    return jsonify({'members':members, 'guests':guests, 'session_info': dict(sess_info) if sess_info else None})
 
 @app.route('/api/attendance', methods=['POST'])
 @login_required
@@ -866,6 +876,51 @@ def save_attendance():
                     (str(uuid.uuid4()),makeup_gid,mid,sess_date,'makeup',makeup_for,gid,None,'Nadomeščanje termina',session.get('username'),now))
     audit(conn,'SAVE_ATTENDANCE','attendance',d['group_id'],d['date'])
     conn.commit(); conn.close(); return jsonify({'ok':True})
+
+@app.route('/api/groups/<gid>/makeup-candidates/<int:year>/<int:month>/<int:day>')
+@login_required
+def get_makeup_candidates(gid, year, month, day):
+    conn = get_db()
+    month_prefix = f"{year}-{month:02d}-%"
+    session_date = date(year, month, day)
+    candidates = conn.execute("""
+        SELECT m.id, m.name FROM members m
+        WHERE m.status='active'
+          AND m.id NOT IN (SELECT member_id FROM group_members WHERE group_id=?)
+        ORDER BY m.name
+    """, (gid,)).fetchall()
+    result = []
+    for c in candidates:
+        mid = c['id']
+        member_groups = conn.execute("""
+            SELECT g.id, g.name, g.day_of_week FROM groups g
+            JOIN group_members gm ON gm.group_id=g.id WHERE gm.member_id=?
+            ORDER BY g.day_of_week, g.time
+        """, (mid,)).fetchall()
+        quota_total = sum(count_sessions_in_month(year, month, g['day_of_week']) for g in member_groups)
+        row = conn.execute("""
+            SELECT COUNT(*) as cnt FROM attendance
+            WHERE member_id=? AND date LIKE ? AND status IN ('present','makeup')
+        """, (mid, month_prefix)).fetchone()
+        quota_used = row['cnt'] if row else 0
+        suggested = []
+        for g in member_groups:
+            diff = g['day_of_week'] - session_date.weekday()
+            g_date = (session_date + timedelta(days=diff)).isoformat()
+            already = conn.execute(
+                "SELECT id FROM attendance WHERE member_id=? AND date=? AND status IN ('present','makeup')",
+                (mid, g_date)).fetchone()
+            if not already:
+                suggested.append({'group_name': g['name'], 'date': g_date})
+        result.append({
+            'id': mid, 'name': c['name'],
+            'groups': [{'id': g['id'], 'name': g['name'], 'day_of_week': g['day_of_week']} for g in member_groups],
+            'quota_used': quota_used, 'quota_total': quota_total,
+            'over_quota': quota_used >= quota_total and quota_total > 0,
+            'suggested_dates': suggested
+        })
+    conn.close()
+    return jsonify(result)
 
 # ── Payments ──────────────────────────────────────────────────────────────────
 @app.route('/api/members/<mid>/payments')

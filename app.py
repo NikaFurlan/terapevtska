@@ -364,7 +364,7 @@ def count_sessions_in_month(year, month, day_of_week):
 # ── Auth ──────────────────────────────────────────────────────────────────────
 @app.route('/login')
 def login_page():
-    if 'user_id' in session: return redirect('/')
+    session.clear()
     return render_template('login.html')
 
 @app.route('/api/auth/login', methods=['POST'])

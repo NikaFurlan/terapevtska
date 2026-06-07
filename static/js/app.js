@@ -870,6 +870,7 @@ function renderGuestSection(warning='') {
         <option value="">— Izberi člana —</option>${opts}
       </select>
       <input type="date" id="guest-makeup-date" class="form-input" style="width:auto" title="Datum termina ki ga nadomešča">
+      <input type="hidden" id="guest-makeup-group-id">
       <button class="btn btn-secondary" onclick="addGuestMember()">+ Dodaj</button>
     </div>
     <div id="guest-date-suggestions" class="guest-date-suggestions"></div>
@@ -894,7 +895,10 @@ function addGuestMember() {
   if (!makeupDate) { showToast('Vnesi datum termina ki ga nadomešča!', 'err'); return; }
   const c = state.makeupCandidates.find(x=>x.id===memberId);
   if (!c) return;
-  const d = { status:'makeup', absence_end_date:'', notes:'', makeup_for_date: makeupDate, makeup_group_id: c.groups[0]?.id||'' };
+  const groupEl = document.getElementById('guest-makeup-group-id');
+  const selectedGroupId = groupEl?.value || '';
+  const makeupGroupId = selectedGroupId || c.groups[0]?.id || '';
+  const d = { status:'makeup', absence_end_date:'', notes:'', makeup_for_date: makeupDate, makeup_group_id: makeupGroupId };
   state.guestData[memberId] = d;
   state.attendanceData[memberId] = d;
   const warning = c.over_quota
@@ -929,14 +933,16 @@ function onGuestCandidateChange() {
     return;
   }
   const btns = available.map(s =>
-    `<button type="button" class="btn btn-ghost btn-sm" onclick="selectGuestDate('${s.date}')">${s.group_name}: ${fmtDate(s.date)}</button>`
+    `<button type="button" class="btn btn-ghost btn-sm" onclick="selectGuestDate('${s.date}','${s.group_id}')">${s.group_name}: ${fmtDate(s.date)}</button>`
   ).join('');
   suggestEl.innerHTML = `<span style="font-size:.78rem;color:var(--text-3);margin-right:.4rem">Nadomešča:</span>${btns}`;
 }
 
-function selectGuestDate(dateStr) {
+function selectGuestDate(dateStr, groupId) {
   const dateEl = document.getElementById('guest-makeup-date');
   if (dateEl) dateEl.value = dateStr;
+  const groupEl = document.getElementById('guest-makeup-group-id');
+  if (groupEl && groupId) groupEl.value = groupId;
 }
 
 function changeAttendanceDate() {

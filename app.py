@@ -911,7 +911,7 @@ def get_makeup_candidates(gid, year, month, day):
                 "SELECT id FROM attendance WHERE member_id=? AND date=? AND status IN ('present','makeup')",
                 (mid, g_date)).fetchone()
             if not already:
-                suggested.append({'group_name': g['name'], 'date': g_date})
+                suggested.append({'group_id': g['id'], 'group_name': g['name'], 'date': g_date})
         result.append({
             'id': mid, 'name': c['name'],
             'groups': [{'id': g['id'], 'name': g['name'], 'day_of_week': g['day_of_week']} for g in member_groups],

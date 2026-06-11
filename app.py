@@ -871,9 +871,13 @@ def save_attendance():
                                 (str(uuid.uuid4()),gid,mid,cur.isoformat(),'absent_excused',None,None,absence_end,'Avtomatski vnos',session.get('username'),now))
                     cur += timedelta(1)
         if status=='makeup' and makeup_for and makeup_gid:
-            if not conn.execute("SELECT id FROM attendance WHERE group_id=? AND member_id=? AND date=?",(makeup_gid,mid,sess_date)).fetchone():
-                conn.execute("INSERT INTO attendance VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (str(uuid.uuid4()),makeup_gid,mid,sess_date,'makeup',makeup_for,gid,None,'Nadomeščanje termina',session.get('username'),now))
+            orig = conn.execute("SELECT id,notes FROM attendance WHERE group_id=? AND member_id=? AND date=?",(makeup_gid,mid,makeup_for)).fetchone()
+            if orig:
+                _sd = datetime.strptime(sess_date,'%Y-%m-%d')
+                makeup_note = f"Nadomeščeno dne {_sd.day}.{_sd.month}.{_sd.year}"
+                existing_notes = orig['notes'] or ''
+                new_notes = existing_notes if makeup_note in existing_notes else (existing_notes + (' — ' if existing_notes else '') + makeup_note)
+                conn.execute("UPDATE attendance SET notes=? WHERE id=?",(new_notes, orig['id']))
     audit(conn,'SAVE_ATTENDANCE','attendance',d['group_id'],d['date'])
     conn.commit(); conn.close(); return jsonify({'ok':True})
 

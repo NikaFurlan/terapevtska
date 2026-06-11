@@ -396,7 +396,7 @@ async function loadMemberHistory(mid) {
 }
 async function deleteAttendanceRecord(mid, gid, date) {
   if (!confirm(`Izbriši zapis prisotnosti za ${fmtDate(date)}?`)) return;
-  await api(`/api/attendance/${gid}/${mid}/${date}`, {method:'DELETE'});
+  await api(`/api/attendance/${gid}/${mid}/${date}`, 'DELETE');
   await loadMemberHistory(mid);
 }
 async function loadMemberPaymentsTab(mid) {

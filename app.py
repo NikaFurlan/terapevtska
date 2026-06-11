@@ -361,6 +361,18 @@ def count_sessions_in_month(year, month, day_of_week):
         cur += timedelta(1)
     return count
 
+def count_sessions_so_far(year, month, day_of_week):
+    """Šteje koliko določenih dni v tednu je bilo do danes (ali do konca meseca če je pretekli)."""
+    first = date(year, month, 1)
+    last = date(year, month, calendar.monthrange(year, month)[1])
+    cutoff = min(date.today(), last)
+    count = 0
+    cur = first
+    while cur <= cutoff:
+        if cur.weekday() == day_of_week: count += 1
+        cur += timedelta(1)
+    return count
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 @app.route('/login')
 def login_page():
@@ -1031,11 +1043,12 @@ def billing_overview(year, month):
     result = []
     for m in members:
         # Price from group memberships (not attendance) — same logic as members list
-        member_groups = conn.execute("""SELECT g.id, g.sessions_per_week FROM groups g
+        member_groups = conn.execute("""SELECT g.id, g.sessions_per_week, g.day_of_week FROM groups g
             JOIN group_members gm ON g.id=gm.group_id WHERE gm.member_id=?""", (m['id'],)).fetchall()
         total_spw = sum((g['sessions_per_week'] or 1) for g in member_groups)
         idx = min(total_spw, 4) - 1 if total_spw > 0 else -1
         monthly_price = tier_prices[idx] if idx >= 0 else 0
+        sessions_so_far = sum(count_sessions_so_far(year, month, g['day_of_week']) for g in member_groups)
 
         # Attendance stats for the month (for display and absence discount)
         rows = conn.execute("""SELECT a.status, a.date, a.absence_end_date
@@ -1094,7 +1107,7 @@ def billing_overview(year, month):
         paid = conn.execute("SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE member_id=? AND period_year=? AND period_month=?",
             (m['id'],year,month)).fetchone()['t']
         result.append({
-            'member_id':m['id'],'name':m['name'],'scheduled':scheduled,
+            'member_id':m['id'],'name':m['name'],'scheduled':scheduled,'sessions_so_far':sessions_so_far,
             'attended':attended,'excused':excused,'unexcused':unexcused,
             'excused_days':total_excused_days,'monthly_price':round(monthly_price,2),
             'base_amount':round(base,2),'discount_amount':round(discount,2),

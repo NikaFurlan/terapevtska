@@ -1015,7 +1015,7 @@ async function loadReport() {
   }
 
   const tot = data.reduce((a,r)=>({
-    scheduled: a.scheduled+r.scheduled,
+    sessions_so_far: a.sessions_so_far+(r.sessions_so_far||0),
     attended:  a.attended+r.attended,
     excused:   a.excused+r.excused,
     unexcused: a.unexcused+r.unexcused,
@@ -1023,7 +1023,7 @@ async function loadReport() {
     paid:      a.paid+r.paid,
     bal:       a.bal+r.balance,
     disc:      a.disc+r.discount_amount+(r.member_discount_amount||0),
-  }), {scheduled:0,attended:0,excused:0,unexcused:0,due:0,paid:0,bal:0,disc:0});
+  }), {sessions_so_far:0,attended:0,excused:0,unexcused:0,due:0,paid:0,bal:0,disc:0});
 
   const unpaid = data.filter(r=>r.balance>0);
   const allPaid = data.filter(r=>r.balance<=0 && r.amount_due>0);
@@ -1068,7 +1068,7 @@ async function loadReport() {
         <strong style="cursor:pointer;color:var(--green)" onclick="showMemberDetail('${r.member_id}')">${r.name}</strong>
         ${r.member_discount_label?`<br><span class="badge badge-amber" style="margin-top:.2rem">👤 ${r.member_discount_label}</span>`:''}
       </td>
-      <td>${r.attended}/${r.scheduled}</td>
+      <td>${r.attended}/${r.sessions_so_far||0}</td>
       <td>${r.excused>0?`${r.excused} (${r.excused_days}d)`:'—'}</td>
       <td>${r.unexcused||'—'}</td>
       <td class="discount-val">${r.discount_amount>0?`-€ ${r.discount_amount.toFixed(2)}`:'—'}</td>
@@ -1086,7 +1086,7 @@ async function loadReport() {
     </tr>`).join('')}</tbody>
     <tfoot><tr>
       <td>Skupaj</td>
-      <td>${tot.attended}/${tot.scheduled}</td>
+      <td>${tot.attended}/${tot.sessions_so_far}</td>
       <td>${tot.excused}</td>
       <td>${tot.unexcused}</td>
       <td class="discount-val">-€ ${tot.disc.toFixed(2)}</td>

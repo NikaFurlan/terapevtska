@@ -384,14 +384,20 @@ async function loadMemberHistory(mid) {
   const statusLabel = {present:'✓ Prisoten',absent_excused:'○ Op. odsoten',absent_unexcused:'✗ Neop.',makeup:'↺ Nadomešč.'};
   const statusClass = {present:'badge-green',absent_excused:'badge-amber',absent_unexcused:'badge-red',makeup:'badge-blue'};
   document.getElementById('member-tab-history').innerHTML = history.length
-    ? `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Skupina</th><th>Status</th><th>Opomba</th><th>Vpisal</th></tr></thead>
+    ? `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Skupina</th><th>Status</th><th>Opomba</th><th>Vpisal</th><th></th></tr></thead>
       <tbody>${history.map(r=>`<tr>
         <td>${fmtDate(r.date)}</td><td>${r.group_name}</td>
         <td><span class="badge ${statusClass[r.status]||''}">${statusLabel[r.status]||r.status}</span></td>
         <td style="color:var(--text-2);font-size:.82rem">${r.notes||''}</td>
         <td style="color:var(--text-3);font-size:.78rem">${r.recorded_by||'—'}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteAttendanceRecord('${mid}','${r.group_id}','${r.date}')">✕</button></td>
       </tr>`).join('')}</tbody></table></div>`
     : '<p class="empty-state"><span class="empty-icon">◎</span>Ni zapisov prisotnosti.</p>';
+}
+async function deleteAttendanceRecord(mid, gid, date) {
+  if (!confirm(`Izbriši zapis prisotnosti za ${fmtDate(date)}?`)) return;
+  await api(`/api/attendance/${gid}/${mid}/${date}`, {method:'DELETE'});
+  await loadMemberHistory(mid);
 }
 async function loadMemberPaymentsTab(mid) {
   const payments = await api(`/api/members/${mid}/payments`);

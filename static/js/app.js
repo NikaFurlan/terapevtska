@@ -372,7 +372,8 @@ async function switchMemberTab(tab, btn) {
   panel.classList.add('active');
   panel.innerHTML = '<div class="loading-text"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite"></span> Nalagam…</div>';
   const mid = state.currentMemberId;
-  if (tab==='history') await loadMemberHistory(mid);
+  if (tab==='overview') { const m = state.members.find(x=>x.id===mid); if (m) await loadMemberOverview(m); }
+  else if (tab==='history') await loadMemberHistory(mid);
   else if (tab==='payments') await loadMemberPaymentsTab(mid);
   else if (tab==='pricing') await loadMemberPricingTab(mid);
   else if (tab==='discount') await loadMemberDiscountTab(mid);

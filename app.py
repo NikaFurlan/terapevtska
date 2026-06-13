@@ -273,6 +273,12 @@ def init_db():
         FOREIGN KEY (group_id) REFERENCES groups(id),
         FOREIGN KEY (member_id) REFERENCES members(id)
     )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_group_date ON attendance(group_id, date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_member ON attendance(member_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_member_date ON attendance(member_id, date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_gm_group ON group_members(group_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_gm_member ON group_members(member_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sess_group_date ON sessions(group_id, session_date)")
     conn.commit()
     # Zaženi migracije (doda nove stolpce/tabele)
     migrate_db(conn)
@@ -492,8 +498,10 @@ def index():
 def get_groups():
     conn = get_db()
     groups = [dict(r) for r in conn.execute("SELECT * FROM groups ORDER BY day_of_week, time").fetchall()]
+    counts = {r['group_id']: r['cnt'] for r in conn.execute(
+        "SELECT group_id, COUNT(*) as cnt FROM group_members GROUP BY group_id").fetchall()}
     for g in groups:
-        g['member_count'] = conn.execute("SELECT COUNT(*) FROM group_members WHERE group_id=?", (g['id'],)).fetchone()[0]
+        g['member_count'] = counts.get(g['id'], 0)
         g['day_name'] = DAYS_SL[g['day_of_week']]
     conn.close(); return jsonify(groups)
 
@@ -552,34 +560,39 @@ def get_group_sessions(gid):
     today = date.today()
     start = today - timedelta(weeks=8)
     end = today + timedelta(weeks=4)
-    # Generiraj vse termine v razponu
+    d_start, d_end = start.isoformat(), end.isoformat()
+
+    # Batch fetch — 3 poizvedbe namesto ~252
+    session_recs = {r['session_date']: dict(r) for r in conn.execute(
+        "SELECT * FROM sessions WHERE group_id=? AND session_date BETWEEN ? AND ?",
+        (gid, d_start, d_end)).fetchall()}
+    att_rows = conn.execute(
+        "SELECT date, COUNT(*) as total, COUNT(CASE WHEN status='present' THEN 1 END) as present_count "
+        "FROM attendance WHERE group_id=? AND date BETWEEN ? AND ? GROUP BY date",
+        (gid, d_start, d_end)).fetchall()
+    att_present = {r['date']: r['present_count'] for r in att_rows}
+    att_total   = {r['date']: r['total']         for r in att_rows}
+
     sessions = []
     cur = start
     while cur <= end:
         if cur.weekday() == dow:
-            session_rec = conn.execute(
-                "SELECT * FROM sessions WHERE group_id=? AND session_date=?",
-                (gid, cur.isoformat())).fetchone()
-            att_count = conn.execute(
-                "SELECT COUNT(*) FROM attendance WHERE group_id=? AND date=? AND status='present'",
-                (gid, cur.isoformat())).fetchone()[0]
-            att_total = conn.execute(
-                "SELECT COUNT(*) FROM attendance WHERE group_id=? AND date=?",
-                (gid, cur.isoformat())).fetchone()[0]
+            d = cur.isoformat()
+            sr = session_recs.get(d)
             sessions.append({
-                'date': cur.isoformat(),
+                'date': d,
                 'date_fmt': cur.strftime('%d.%m.%Y'),
                 'weekday': DAYS_SL[cur.weekday()],
                 'is_past': cur < today,
                 'is_today': cur == today,
                 'is_future': cur > today,
-                'cancelled': session_rec['cancelled'] if session_rec else 0,
-                'cancel_reason': session_rec['cancel_reason'] if session_rec else None,
-                'notes': session_rec['notes'] if session_rec else None,
-                'session_id': session_rec['id'] if session_rec else None,
-                'attendance_present': att_count,
-                'attendance_total': att_total,
-                'has_attendance': att_total > 0,
+                'cancelled': sr['cancelled'] if sr else 0,
+                'cancel_reason': sr['cancel_reason'] if sr else None,
+                'notes': sr['notes'] if sr else None,
+                'session_id': sr['id'] if sr else None,
+                'attendance_present': att_present.get(d, 0),
+                'attendance_total': att_total.get(d, 0),
+                'has_attendance': att_total.get(d, 0) > 0,
             })
         cur += timedelta(1)
     conn.close()

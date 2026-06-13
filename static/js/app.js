@@ -80,7 +80,7 @@ async function loadDashboard() {
 
 function groupCard(g, showAttStatus=false) {
   return `<div class="group-card" onclick="openAttendance('${g.id}','${todayISO()}')">
-    ${showAttStatus?(g.attendance_done?'<span class="done-badge">✓ Vpisano</span>':'<span class="done-badge" style="background:var(--red-light,#fee2e2);color:var(--red,#dc2626)">! Potreben vpis</span>'):''}
+    ${showAttStatus?(g.attendance_done?'<span class="done-badge">✓ Vpisano</span>':'<span class="done-badge" style="background:var(--red-light,#fee2e2);color:var(--red,#dc2626)">Potreben vpis</span>'):''}
     <div class="card-day">${g.day_name||DAYS_SL[g.day_of_week]}</div>
     <div class="card-name">${g.name}</div>
     <div class="card-meta"><span>🕐 ${g.time}</span><span>👥 ${g.member_count||0} / ${g.max_members||12}</span></div>
@@ -763,6 +763,7 @@ async function openAttendance(groupId, dateStr) {
   document.getElementById('attendance-title').textContent = g?g.name:'Prisotnost';
   document.getElementById('attendance-subtitle').textContent = fmtDate(dateStr);
   navigateTo('attendance');
+  document.getElementById('attendance-list').innerHTML = '<div class="loading-text"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px"></span> Nalagam…</div>';
   await renderAttendance();
 }
 async function renderAttendance() {

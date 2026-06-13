@@ -63,6 +63,10 @@ if (uname) uname.textContent = (uname.closest('.sidebar').querySelector('.sideba
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 async function loadDashboard() {
+  // Render cached groups immediately so the page isn't blank
+  if (state.groups.length) {
+    document.getElementById('all-groups-dash').innerHTML = state.groups.map(g=>groupCard(g, false)).join('');
+  }
   const [data, allGroups] = await Promise.all([api('/api/today'), state.groups.length ? Promise.resolve(state.groups) : api('/api/groups')]);
   state.groups = allGroups;
   document.getElementById('today-dayname').textContent = data.day_name;
@@ -715,7 +719,7 @@ async function openSessionHistory(gid) {
         </div>
         <div style="color:var(--text-3);font-size:.82rem;flex-shrink:0">${s.weekday}</div>
         <div style="flex:1;font-size:.82rem;color:var(--text-2)">
-          ${s.cancelled?'':s.has_attendance?`<span style="color:var(--green)">✓ ${s.attendance_present}/${s.attendance_total} vpisanih</span>`:s.is_future?`<span style="color:var(--text-3)">Brez vpisa</span>`:`<span style="color:var(--red);font-weight:600">! Potreben vpis</span>`}
+          ${s.cancelled?'':s.has_attendance?`<span style="color:var(--green)">✓ ${s.attendance_present}/${s.attendance_total} vpisanih</span>`:s.is_future?`<span style="color:var(--text-3)">Brez vpisa</span>`:`<span style="color:var(--red);font-weight:600">Potreben vpis</span>`}
         </div>
         ${s.notes?`<div style="font-size:.78rem;color:var(--text-3);font-style:italic">${s.notes}</div>`:''}
         <div class="session-history-actions" style="display:flex;gap:.4rem;flex-shrink:0">
@@ -829,7 +833,7 @@ function renderAttRow(m) {
         <small style="color:var(--text-3);font-size:.72rem">Pusti prazno za enkratno odsotnost</small>
       </div>
       <div class="form-group"><label>Opomba</label>
-        <input type="text" class="form-input" value="${d.notes||''}" placeholder="npr. bolezniški" onchange="updateField('${m.id}','notes',this.value)">
+        <input type="text" class="form-input" value="${d.notes||''}" placeholder="npr. bolniška" onchange="updateField('${m.id}','notes',this.value)">
       </div>
     </div>`:''}
     ${isMakeup?`<div class="attendance-extra">
@@ -1302,11 +1306,12 @@ document.querySelectorAll('.nav-links a').forEach(a => {
 
 loadDashboard();
 
-// Prefetch settings + current month billing in background
+// Prefetch settings + groups + current month billing in background
 (async () => {
   try {
-    const [settings] = await Promise.all([api('/api/settings')]);
+    const [settings, groups] = await Promise.all([api('/api/settings'), api('/api/groups')]);
     state.priceTiers = settings;
+    if (!state.groups.length) state.groups = groups;
   } catch(e) {}
   try {
     const now = new Date();

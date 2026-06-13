@@ -1196,15 +1196,21 @@ def billing_csv(year, month):
 @app.route('/api/today')
 @login_required
 def today_groups():
-    today_dow = date.today().weekday(); conn = get_db()
-    groups = [dict(r) for r in conn.execute("SELECT * FROM groups WHERE day_of_week=? ORDER BY time",(today_dow,)).fetchall()]
-    for g in groups:
-        g['day_name'] = DAYS_SL[g['day_of_week']]
-        g['member_count'] = conn.execute(
-            "SELECT COUNT(*) FROM group_members gm JOIN members m ON m.id=gm.member_id WHERE gm.group_id=? AND m.status='active'",(g['id'],)).fetchone()[0]
-        g['attendance_done'] = conn.execute(
-            "SELECT COUNT(*) FROM attendance WHERE group_id=? AND date=?",(g['id'],date.today().isoformat())).fetchone()[0] > 0
-    week_start = date.today() - timedelta(days=date.today().weekday())
+    today = date.today(); today_iso = today.isoformat(); conn = get_db()
+    groups = [dict(r) for r in conn.execute("SELECT * FROM groups WHERE day_of_week=? ORDER BY time",(today.weekday(),)).fetchall()]
+    if groups:
+        gids = [g['id'] for g in groups]; ph = ','.join('?'*len(gids))
+        counts = {r[0]:r[1] for r in conn.execute(
+            f"SELECT gm.group_id,COUNT(*) FROM group_members gm JOIN members m ON m.id=gm.member_id WHERE gm.group_id IN ({ph}) AND m.status='active' GROUP BY gm.group_id",
+            gids).fetchall()}
+        att_done = {r[0] for r in conn.execute(
+            f"SELECT DISTINCT group_id FROM attendance WHERE group_id IN ({ph}) AND date=?",
+            gids+[today_iso]).fetchall()}
+        for g in groups:
+            g['day_name'] = DAYS_SL[g['day_of_week']]
+            g['member_count'] = counts.get(g['id'], 0)
+            g['attendance_done'] = g['id'] in att_done
+    week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(6)
     sessions_this_week = conn.execute(
         "SELECT COUNT(DISTINCT date||group_id) FROM attendance WHERE date BETWEEN ? AND ?",(week_start.isoformat(),week_end.isoformat())).fetchone()[0]
@@ -1212,9 +1218,9 @@ def today_groups():
     unpaid = conn.execute("""SELECT COUNT(DISTINCT m.id) FROM members m
         WHERE m.status='active' AND NOT EXISTS (
             SELECT 1 FROM payments p WHERE p.member_id=m.id AND p.period_year=? AND p.period_month=?)""",
-        (date.today().year, date.today().month)).fetchone()[0]
+        (today.year, today.month)).fetchone()[0]
     conn.close()
-    return jsonify({'today':date.today().strftime('%d.%m.%Y'),'day_name':DAYS_SL[date.today().weekday()],
+    return jsonify({'today':today.strftime('%d.%m.%Y'),'day_name':DAYS_SL[today.weekday()],
         'groups':groups,'active_members':active_members,'sessions_this_week':sessions_this_week,'unpaid':unpaid})
 
 init_db()

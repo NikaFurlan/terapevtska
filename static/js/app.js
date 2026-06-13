@@ -80,7 +80,7 @@ async function loadDashboard() {
 
 function groupCard(g) {
   return `<div class="group-card" onclick="openAttendance('${g.id}','${todayISO()}')">
-    ${g.attendance_done?'<span class="done-badge">✓ Vpisano</span>':''}
+    ${g.attendance_done?'<span class="done-badge">✓ Vpisano</span>':'<span class="done-badge" style="background:var(--red-light,#fee2e2);color:var(--red,#dc2626)">! Potreben vpis</span>'}
     <div class="card-day">${g.day_name||DAYS_SL[g.day_of_week]}</div>
     <div class="card-name">${g.name}</div>
     <div class="card-meta"><span>🕐 ${g.time}</span><span>👥 ${g.member_count||0} / ${g.max_members||12}</span></div>

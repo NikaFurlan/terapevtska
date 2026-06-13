@@ -926,28 +926,54 @@ def get_makeup_candidates(gid, year, month, day):
           AND m.id NOT IN (SELECT member_id FROM group_members WHERE group_id=?)
         ORDER BY m.name
     """, (gid,)).fetchall()
+    if not candidates:
+        conn.close(); return jsonify([])
+    cids = [c['id'] for c in candidates]
+    ph = ','.join('?'*len(cids))
+
+    # Batch: group memberships for all candidates
+    gm_rows = conn.execute(f"""SELECT gm.member_id, g.id, g.name, g.day_of_week FROM groups g
+        JOIN group_members gm ON gm.group_id=g.id WHERE gm.member_id IN ({ph})
+        ORDER BY g.day_of_week, g.time""", cids).fetchall()
+    groups_map = {}
+    for r in gm_rows:
+        groups_map.setdefault(r['member_id'], []).append(r)
+
+    # Batch: quota used for all candidates
+    quota_rows = conn.execute(f"""SELECT member_id, COUNT(*) as cnt FROM attendance
+        WHERE member_id IN ({ph}) AND date LIKE ? AND status IN ('present','makeup')
+        GROUP BY member_id""", cids + [month_prefix]).fetchall()
+    quota_map = {r['member_id']: r['cnt'] for r in quota_rows}
+
+    # Collect all candidate dates to check in one query
+    date_checks = {}  # (member_id, date) → True if already present
+    for c in candidates:
+        mid = c['id']
+        for g in groups_map.get(mid, []):
+            diff = g['day_of_week'] - session_date.weekday()
+            g_date = (session_date + timedelta(days=diff)).isoformat()
+            date_checks.setdefault(mid, set()).add(g_date)
+    all_dates = list({d for dates in date_checks.values() for d in dates})
+    if all_dates:
+        dp = ','.join('?'*len(all_dates))
+        existing_rows = conn.execute(f"""SELECT member_id, date FROM attendance
+            WHERE member_id IN ({ph}) AND date IN ({dp}) AND status IN ('present','makeup')""",
+            cids + all_dates).fetchall()
+        existing_set = {(r['member_id'], r['date']) for r in existing_rows}
+    else:
+        existing_set = set()
+
     result = []
     for c in candidates:
         mid = c['id']
-        member_groups = conn.execute("""
-            SELECT g.id, g.name, g.day_of_week FROM groups g
-            JOIN group_members gm ON gm.group_id=g.id WHERE gm.member_id=?
-            ORDER BY g.day_of_week, g.time
-        """, (mid,)).fetchall()
+        member_groups = groups_map.get(mid, [])
         quota_total = sum(count_sessions_in_month(year, month, g['day_of_week']) for g in member_groups)
-        row = conn.execute("""
-            SELECT COUNT(*) as cnt FROM attendance
-            WHERE member_id=? AND date LIKE ? AND status IN ('present','makeup')
-        """, (mid, month_prefix)).fetchone()
-        quota_used = row['cnt'] if row else 0
+        quota_used = quota_map.get(mid, 0)
         suggested = []
         for g in member_groups:
             diff = g['day_of_week'] - session_date.weekday()
             g_date = (session_date + timedelta(days=diff)).isoformat()
-            already = conn.execute(
-                "SELECT id FROM attendance WHERE member_id=? AND date=? AND status IN ('present','makeup')",
-                (mid, g_date)).fetchone()
-            if not already:
+            if (mid, g_date) not in existing_set:
                 suggested.append({'group_id': g['id'], 'group_name': g['name'], 'date': g_date})
         result.append({
             'id': mid, 'name': c['name'],

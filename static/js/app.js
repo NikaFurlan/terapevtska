@@ -766,7 +766,13 @@ async function openAttendance(groupId, dateStr) {
   await renderAttendance();
 }
 async function renderAttendance() {
-  const data = await api(`/api/attendance/${state.currentGroupId}/${state.currentDate}`);
+  const [year, month, day] = state.currentDate.split('-');
+  const [data, makeup] = await Promise.all([
+    api(`/api/attendance/${state.currentGroupId}/${state.currentDate}`),
+    state.makeupCandidates.length ? Promise.resolve(state.makeupCandidates)
+      : api(`/api/groups/${state.currentGroupId}/makeup-candidates/${year}/${parseInt(month)}/${parseInt(day)}`).catch(()=>[])
+  ]);
+  state.makeupCandidates = makeup;
   const el = document.getElementById('attendance-list');
   const members = data.members || data;
   const guests = data.guests || [];
@@ -797,12 +803,6 @@ async function renderAttendance() {
       state.persistedGuestIds.add(g.id);
     }
   });
-  if (!state.makeupCandidates.length) {
-    const [year, month] = state.currentDate.split('-');
-    const [,, day] = state.currentDate.split('-');
-    try { state.makeupCandidates = await api(`/api/groups/${state.currentGroupId}/makeup-candidates/${year}/${parseInt(month)}/${parseInt(day)}`); }
-    catch(e) { state.makeupCandidates = []; }
-  }
   const isPast = new Date(state.currentDate) < new Date(new Date().toDateString());
   const banner = isPast?`<div class="info-box" style="background:var(--amber-light);color:var(--amber);margin-bottom:.85rem">📅 Urejate pretekli termin: ${fmtDate(state.currentDate)}</div>`:'';
   const memberRows = members.length ? members.map(m=>renderAttRow(m)).join('') : '<p class="empty-state"><span class="empty-icon">◉</span>Ni aktivnih članov.</p>';

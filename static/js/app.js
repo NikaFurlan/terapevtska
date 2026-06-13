@@ -1300,3 +1300,14 @@ document.querySelectorAll('.nav-links a').forEach(a => {
 });
 
 loadDashboard();
+
+// Prefetch current month billing in background so report opens instantly
+(async () => {
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth() + 1;
+  try {
+    const data = await api(`/api/billing/${year}/${month}`);
+    if (!state.reportCache) state.reportCache = {};
+    state.reportCache[`${year}-${month}`] = data;
+  } catch(e) {}
+})();

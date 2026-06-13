@@ -698,11 +698,11 @@ async function openSessionHistory(gid) {
   state.currentGroupId = gid;
   navigateTo('attendance');
   const el = document.getElementById('attendance-list');
-  const statusDot = s => s.cancelled ? '🚫' : s.has_attendance ? '✓' : s.is_future ? '○' : '–';
-  const statusColor = s => s.cancelled ? 'var(--red)' : s.has_attendance ? 'var(--green)' : s.is_future ? 'var(--text-3)' : 'var(--amber)';
+  const statusDot = s => s.cancelled ? '🚫' : s.has_attendance ? '✓' : s.is_future ? '○' : '!';
+  const statusColor = s => s.cancelled ? 'var(--red)' : s.has_attendance ? 'var(--green)' : s.is_future ? 'var(--text-3)' : 'var(--red)';
   el.innerHTML = `
     <div style="margin-bottom:1rem">
-      <p style="color:var(--text-2);font-size:.85rem;margin-bottom:.75rem">Klikni termin za urejanje prisotnosti. Zeleni = vpisani, rumeni = brez vpisa, rdeči = odpovedan.</p>
+      <p style="color:var(--text-2);font-size:.85rem;margin-bottom:.75rem">Klikni termin za urejanje prisotnosti. Zeleni = vpisani, rdeči = potreben vpis, sivi = odpovedan.</p>
     </div>
     <div style="display:flex;flex-direction:column;gap:.45rem">
     ${sessions.map(s=>`
@@ -716,7 +716,7 @@ async function openSessionHistory(gid) {
         </div>
         <div style="color:var(--text-3);font-size:.82rem;flex-shrink:0">${s.weekday}</div>
         <div style="flex:1;font-size:.82rem;color:var(--text-2)">
-          ${s.has_attendance?`<span style="color:var(--green)">✓ ${s.attendance_present}/${s.attendance_total} vpisanih</span>`:'<span style="color:var(--amber)">Brez vpisa</span>'}
+          ${s.cancelled?'':s.has_attendance?`<span style="color:var(--green)">✓ ${s.attendance_present}/${s.attendance_total} vpisanih</span>`:s.is_future?`<span style="color:var(--text-3)">Brez vpisa</span>`:`<span style="color:var(--red);font-weight:600">! Potreben vpis</span>`}
         </div>
         ${s.notes?`<div style="font-size:.78rem;color:var(--text-3);font-style:italic">${s.notes}</div>`:''}
         <div class="session-history-actions" style="display:flex;gap:.4rem;flex-shrink:0">

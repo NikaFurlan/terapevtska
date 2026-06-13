@@ -1052,27 +1052,56 @@ def billing_overview(year, month):
     tier_prices = [tier_rows.get('tier_price_1',40.0), tier_rows.get('tier_price_2',70.0),
                    tier_rows.get('tier_price_3',90.0), tier_rows.get('tier_price_4plus',110.0)]
     month_str = f"{year:04d}-{month:02d}"
+    first_day = f"{year:04d}-{month:02d}-01"
+    last_day  = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
     members = [dict(r) for r in conn.execute("SELECT * FROM members WHERE status='active' ORDER BY name").fetchall()]
+    if not members:
+        conn.close(); return jsonify([])
+    ids = [m['id'] for m in members]
+    ph = ','.join('?' * len(ids))
+
+    # Batch fetch — 4 poizvedbe za vse člane skupaj
+    gm_rows = conn.execute(f"""SELECT gm.member_id, g.sessions_per_week, g.day_of_week
+        FROM group_members gm JOIN groups g ON g.id=gm.group_id
+        WHERE gm.member_id IN ({ph})""", ids).fetchall()
+    groups_map = {}
+    for r in gm_rows:
+        groups_map.setdefault(r['member_id'], []).append(r)
+
+    att_rows = conn.execute(f"""SELECT member_id, status, date, absence_end_date
+        FROM attendance WHERE member_id IN ({ph}) AND strftime('%Y-%m',date)=?""",
+        ids + [month_str]).fetchall()
+    att_map = {}
+    for r in att_rows:
+        att_map.setdefault(r['member_id'], []).append(r)
+
+    disc_rows = conn.execute(f"""SELECT * FROM member_discount WHERE member_id IN ({ph})
+        AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)
+        ORDER BY member_id, valid_from""", ids + [last_day, first_day]).fetchall()
+    disc_map = {}
+    for r in disc_rows:
+        disc_map.setdefault(r['member_id'], []).append(r)
+
+    paid_rows = conn.execute(f"""SELECT member_id, COALESCE(SUM(amount),0) as t FROM payments
+        WHERE member_id IN ({ph}) AND period_year=? AND period_month=?
+        GROUP BY member_id""", ids + [year, month]).fetchall()
+    paid_map = {r['member_id']: r['t'] for r in paid_rows}
+
     result = []
     for m in members:
-        # Price from group memberships (not attendance) — same logic as members list
-        member_groups = conn.execute("""SELECT g.id, g.sessions_per_week, g.day_of_week FROM groups g
-            JOIN group_members gm ON g.id=gm.group_id WHERE gm.member_id=?""", (m['id'],)).fetchall()
+        mid = m['id']
+        member_groups = groups_map.get(mid, [])
         total_spw = sum((g['sessions_per_week'] or 1) for g in member_groups)
         idx = min(total_spw, 4) - 1 if total_spw > 0 else -1
         monthly_price = tier_prices[idx] if idx >= 0 else 0
         sessions_so_far = sum(count_sessions_so_far(year, month, g['day_of_week']) for g in member_groups)
 
-        # Attendance stats for the month (for display and absence discount)
-        rows = conn.execute("""SELECT a.status, a.date, a.absence_end_date
-            FROM attendance a WHERE a.member_id=? AND strftime('%Y-%m',a.date)=?""",
-            (m['id'], month_str)).fetchall()
+        rows = att_map.get(mid, [])
         attended = sum(1 for r in rows if r['status'] in ('present','makeup'))
         excused  = sum(1 for r in rows if r['status']=='absent_excused')
         unexcused= sum(1 for r in rows if r['status']=='absent_unexcused')
         scheduled = len(rows)
 
-        # Calendar days of excused absence
         period_map = {}
         for r in rows:
             if r['status'] == 'absent_excused':
@@ -1084,7 +1113,6 @@ def billing_overview(year, month):
             ed = datetime.strptime(end_date,'%Y-%m-%d').date()
             total_excused_days += max((ed - sd).days + 1, 1)
 
-        # Absence discount and next-month recommendation
         if total_excused_days <= discount_days:
             absence_discount_pct = 0.0; next_month_rec = None
         elif total_excused_days <= discount_days_max:
@@ -1098,13 +1126,7 @@ def billing_overview(year, month):
         discount = round(base * absence_discount_pct, 2)
         amount_due = base - discount
 
-        # Individual member discounts (popusti) — multiple allowed
-        first_day = f"{year:04d}-{month:02d}-01"
-        last_day  = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
-        member_discs = conn.execute("""SELECT * FROM member_discount WHERE member_id=?
-            AND valid_from<=? AND (valid_to IS NULL OR valid_to>=?)
-            ORDER BY valid_from""",
-            (m['id'], last_day, first_day)).fetchall()
+        member_discs = disc_map.get(mid, [])
         member_discount_amount = 0.0; member_discount_labels = []
         for md in member_discs:
             if md['discount_type'] == 'percent':
@@ -1117,10 +1139,9 @@ def billing_overview(year, month):
         member_discount_amount = round(min(member_discount_amount, amount_due), 2)
         member_discount_label = ', '.join(member_discount_labels) if member_discount_labels else None
         amount_due = round(max(0.0, amount_due - member_discount_amount), 2)
-        paid = conn.execute("SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE member_id=? AND period_year=? AND period_month=?",
-            (m['id'],year,month)).fetchone()['t']
+        paid = paid_map.get(mid, 0)
         result.append({
-            'member_id':m['id'],'name':m['name'],'scheduled':scheduled,'sessions_so_far':sessions_so_far,
+            'member_id':mid,'name':m['name'],'scheduled':scheduled,'sessions_so_far':sessions_so_far,
             'attended':attended,'excused':excused,'unexcused':unexcused,
             'excused_days':total_excused_days,'monthly_price':round(monthly_price,2),
             'base_amount':round(base,2),'discount_amount':round(discount,2),

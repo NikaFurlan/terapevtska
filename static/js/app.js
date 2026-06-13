@@ -64,7 +64,8 @@ if (uname) uname.textContent = (uname.closest('.sidebar').querySelector('.sideba
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 async function loadDashboard() {
-  const data = await api('/api/today');
+  const [data, allGroups] = await Promise.all([api('/api/today'), state.groups.length ? Promise.resolve(state.groups) : api('/api/groups')]);
+  state.groups = allGroups;
   document.getElementById('today-dayname').textContent = data.day_name;
   document.getElementById('today-date').textContent = data.today;
   document.getElementById('dashboard-stats').innerHTML = `
@@ -75,8 +76,6 @@ async function loadDashboard() {
   todayEl.innerHTML = data.groups.length
     ? data.groups.map(g=>groupCard(g)).join('')
     : '<p class="empty-state"><span class="empty-icon">◎</span>Danes ni skupin.</p>';
-  const allGroups = await api('/api/groups');
-  state.groups = allGroups;
   document.getElementById('all-groups-dash').innerHTML = allGroups.map(g=>groupCard(g)).join('');
 }
 
@@ -195,9 +194,6 @@ async function refreshMemberState(mid) {
       await loadMemberOverview(m);
     }
   }
-  if (document.getElementById('view-dashboard').classList.contains('active')) {
-    loadDashboard();
-  }
 }
 
 function renderMembersMobile(members) {
@@ -234,7 +230,10 @@ async function deleteMember(mid, name) {
   await api(`/api/members/${mid}`,'DELETE'); showToast('Član odstranjen.'); loadMembers();
 }
 async function showMemberModal(id) {
-  const [groups, settings] = await Promise.all([api('/api/groups'), api('/api/settings')]);
+  const [groups, settings] = await Promise.all([
+    state.groups.length ? Promise.resolve(state.groups) : api('/api/groups'),
+    state.priceTiers ? Promise.resolve(state.priceTiers) : api('/api/settings')
+  ]);
   state.groups = groups; state.priceTiers = settings;
   document.getElementById('member-id').value = id||'';
   document.getElementById('modal-member-title').textContent = id?'Uredi člana':'Nov član';
@@ -438,7 +437,7 @@ async function loadMemberContactsTab(mid) {
 }
 
 async function loadMemberPricingTab(mid) {
-  const [pricing, groups] = await Promise.all([api(`/api/members/${mid}/pricing`), api('/api/groups')]);
+  const [pricing, groups] = await Promise.all([api(`/api/members/${mid}/pricing`), state.groups.length ? Promise.resolve(state.groups) : api('/api/groups')]);
   const VISITS = [1,2,3,4,5];
   document.getElementById('member-tab-pricing').innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
@@ -674,7 +673,7 @@ async function deleteMemberComment(cid, mid) {
 }
 
 async function loadAttendanceNav() {
-  const groups = await api('/api/groups'); state.groups = groups;
+  const groups = state.groups.length ? state.groups : await api('/api/groups'); state.groups = groups;
   document.getElementById('att-nav-groups').innerHTML = groups.map(g=>`
     <div class="group-card">
       <div class="card-day">${DAYS_SL[g.day_of_week]}</div>
@@ -1106,7 +1105,7 @@ function exportCSV() {
 
 // ── Settings ──────────────────────────────────────────────────────────────
 async function loadSettings() {
-  const [settings, groups] = await Promise.all([api('/api/settings'), api('/api/groups')]);
+  const [settings, groups] = await Promise.all([api('/api/settings'), state.groups.length ? Promise.resolve(state.groups) : api('/api/groups')]);
   state.groups = groups;
   document.getElementById('settings-content').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:800px">

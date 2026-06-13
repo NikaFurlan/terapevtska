@@ -45,7 +45,6 @@ function navigateTo(view) {
   else if (view==='attendance-nav') loadAttendanceNav();
   else if (view==='report') initReport();
   else if (view==='settings') loadSettings();
-  else if (view==='audit') loadAudit();
 }
 document.querySelectorAll('.nav-links a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); navigateTo(a.dataset.view); }));
 
@@ -1287,21 +1286,6 @@ async function registerUser() {
   else{err.textContent=res.error;err.classList.add('show');}
 }
 
-// ── Audit ─────────────────────────────────────────────────────────────────
-async function loadAudit() {
-  const data=await api('/api/audit');
-  const aLabel={CREATE:'Dodano',UPDATE:'Urejeno',DELETE:'Izbrisano',SAVE_ATTENDANCE:'Prisotnost',CHANGE_PASSWORD:'Geslo'};
-  const aClass={CREATE:'badge-green',UPDATE:'badge-blue',DELETE:'badge-red',SAVE_ATTENDANCE:'badge-amber',CHANGE_PASSWORD:'badge-gray'};
-  document.getElementById('audit-content').innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>Čas</th><th>Uporabnik</th><th>Akcija</th><th>Tabela</th><th>Podrobnosti</th></tr></thead>
-    <tbody>${data.map(r=>`<tr>
-      <td style="font-size:.78rem;color:var(--text-2);white-space:nowrap">${r.timestamp.replace('T',' ').substring(0,16)}</td>
-      <td><strong>${r.username}</strong></td>
-      <td><span class="badge ${aClass[r.action]||'badge-gray'}">${aLabel[r.action]||r.action}</span></td>
-      <td style="font-size:.82rem;color:var(--text-2)">${r.table_name}</td>
-      <td style="font-size:.8rem;color:var(--text-2)">${r.detail||''}</td>
-    </tr>`).join('')}</tbody></table></div>`;
-}
 
 // ── Init ──────────────────────────────────────────────────────────────────
 // ── Mobile menu ───────────────────────────────────────────────────────────
@@ -1326,7 +1310,4 @@ document.querySelectorAll('.nav-links a').forEach(a => {
   });
 });
 
-fetch('/api/auth/me').then(r=>r.json()).then(me=>{
-  if(me.role==='admin') document.getElementById('nav-audit').style.display='';
-});
 loadDashboard();

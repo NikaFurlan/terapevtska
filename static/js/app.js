@@ -73,14 +73,14 @@ async function loadDashboard() {
     <div class="stat-card ${data.unpaid>0?'warn':''}"><div class="stat-num">${data.unpaid}</div><div class="stat-label">Neplačnikov</div></div>`;
   const todayEl = document.getElementById('today-groups');
   todayEl.innerHTML = data.groups.length
-    ? data.groups.map(g=>groupCard(g)).join('')
+    ? data.groups.map(g=>groupCard(g, true)).join('')
     : '<p class="empty-state"><span class="empty-icon">◎</span>Danes ni skupin.</p>';
-  document.getElementById('all-groups-dash').innerHTML = allGroups.map(g=>groupCard(g)).join('');
+  document.getElementById('all-groups-dash').innerHTML = allGroups.map(g=>groupCard(g, false)).join('');
 }
 
-function groupCard(g) {
+function groupCard(g, showAttStatus=false) {
   return `<div class="group-card" onclick="openAttendance('${g.id}','${todayISO()}')">
-    ${g.attendance_done?'<span class="done-badge">✓ Vpisano</span>':'<span class="done-badge" style="background:var(--red-light,#fee2e2);color:var(--red,#dc2626)">! Potreben vpis</span>'}
+    ${showAttStatus?(g.attendance_done?'<span class="done-badge">✓ Vpisano</span>':'<span class="done-badge" style="background:var(--red-light,#fee2e2);color:var(--red,#dc2626)">! Potreben vpis</span>'):''}
     <div class="card-day">${g.day_name||DAYS_SL[g.day_of_week]}</div>
     <div class="card-name">${g.name}</div>
     <div class="card-meta"><span>🕐 ${g.time}</span><span>👥 ${g.member_count||0} / ${g.max_members||12}</span></div>

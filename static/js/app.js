@@ -1003,7 +1003,15 @@ async function loadReport() {
   const monthName = MONTHS_SL[month-1];
   document.getElementById('report-subtitle').textContent = `${monthName} ${year}`;
 
+  const cacheKey = `${year}-${month}`;
+  if (state.reportCache && state.reportCache[cacheKey]) renderReport(state.reportCache[cacheKey], monthName, year);
   const data = await api(`/api/billing/${year}/${month}`);
+  if (!state.reportCache) state.reportCache = {};
+  state.reportCache[cacheKey] = data;
+  renderReport(data, monthName, year);
+}
+
+function renderReport(data, monthName, year) {
   const sumEl = document.getElementById('report-summary');
   const el    = document.getElementById('report-content');
 
@@ -1027,7 +1035,6 @@ async function loadReport() {
   const unpaid = data.filter(r=>r.balance>0);
   const allPaid = data.filter(r=>r.balance<=0 && r.amount_due>0);
 
-  // Povzetek kartic
   sumEl.innerHTML = `
     <div class="stats-row" style="margin-bottom:1.25rem">
       <div class="stat-card"><div class="stat-num" style="color:var(--green)">€ ${tot.paid.toFixed(2)}</div><div class="stat-label">Plačano</div></div>
@@ -1040,7 +1047,6 @@ async function loadReport() {
     </div>`:''}
     ${allPaid.length===data.filter(r=>r.amount_due>0).length&&allPaid.length>0?`<div class="info-box" style="background:var(--green-light);color:var(--green-dark);margin-bottom:1rem">✓ Vsi člani so poravnali obveznosti za ${monthName} ${year}.</div>`:''}`;
 
-  // Next-month recommendations
   const recs = data.filter(r=>r.next_month_rec);
   const recsHtml = recs.length ? `<div class="info-box" style="background:#fffbf0;color:#b45309;margin-bottom:1rem">
     <strong>Priporočila za naslednji mesec:</strong><br>
@@ -1048,19 +1054,10 @@ async function loadReport() {
       ${r.next_month_rec.startsWith('-')?`<button class="btn btn-ghost btn-sm" style="margin-left:.5rem" onclick="showMemberDetail('${r.member_id}')">Nastavi popust</button>`:''}</div>`).join('')}
   </div>` : '';
 
-  // Glavna tabela
   el.innerHTML = recsHtml + `<div class="table-wrap"><table class="report-table">
     <thead><tr>
-      <th>Ime</th>
-      <th>Prisotnost</th>
-      <th>Op. ods. (dni)</th>
-      <th>Neop. ods.</th>
-      <th>Pop. ods.</th>
-      <th>Pop. član</th>
-      <th>Za plačilo</th>
-      <th>Plačano</th>
-      <th>Razlika</th>
-      <th></th>
+      <th>Ime</th><th>Prisotnost</th><th>Op. ods. (dni)</th><th>Neop. ods.</th>
+      <th>Pop. ods.</th><th>Pop. član</th><th>Za plačilo</th><th>Plačano</th><th>Razlika</th><th></th>
     </tr></thead>
     <tbody>${data.map(r=>`<tr style="${r.balance>0?'background:#fffbf0':''}">
       <td>
@@ -1073,23 +1070,14 @@ async function loadReport() {
       <td class="discount-val">${r.discount_amount>0?`-€ ${r.discount_amount.toFixed(2)}`:'—'}</td>
       <td class="discount-val">${(r.member_discount_amount||0)>0?`-€ ${r.member_discount_amount.toFixed(2)}`:'—'}</td>
       <td class="amount">€ ${r.amount_due.toFixed(2)}</td>
-      <td>
-        <span style="color:${r.paid>0?'var(--green)':'var(--text-3)'}; font-weight:600">€ ${r.paid.toFixed(2)}</span>
-      </td>
-      <td><span class="${r.balance>0?'balance-due':'balance-ok'}" style="font-weight:700">
-        ${r.balance>0?`€ ${r.balance.toFixed(2)}`:'✓'}
-      </span></td>
-      <td style="white-space:nowrap">
-        <button class="btn btn-primary btn-sm" onclick="showPaymentModal('${r.member_id}','${r.name}')">+ Plačilo</button>
-      </td>
+      <td><span style="color:${r.paid>0?'var(--green)':'var(--text-3)'};font-weight:600">€ ${r.paid.toFixed(2)}</span></td>
+      <td><span class="${r.balance>0?'balance-due':'balance-ok'}" style="font-weight:700">${r.balance>0?`€ ${r.balance.toFixed(2)}`:'✓'}</span></td>
+      <td style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="showPaymentModal('${r.member_id}','${r.name}')">+ Plačilo</button></td>
     </tr>`).join('')}</tbody>
     <tfoot><tr>
-      <td>Skupaj</td>
-      <td>${tot.attended}/${tot.sessions_so_far}</td>
-      <td>${tot.excused}</td>
-      <td>${tot.unexcused}</td>
-      <td class="discount-val">-€ ${tot.disc.toFixed(2)}</td>
-      <td></td>
+      <td>Skupaj</td><td>${tot.attended}/${tot.sessions_so_far}</td>
+      <td>${tot.excused}</td><td>${tot.unexcused}</td>
+      <td class="discount-val">-€ ${tot.disc.toFixed(2)}</td><td></td>
       <td class="amount">€ ${tot.due.toFixed(2)}</td>
       <td style="font-weight:700;text-align:right">€ ${tot.paid.toFixed(2)}</td>
       <td class="${tot.bal>0?'balance-due':'balance-ok'}" style="font-weight:700">€ ${tot.bal.toFixed(2)}</td>
@@ -1203,6 +1191,7 @@ async function savePayment() {
   await api('/api/payments','POST',data);
   closeModal();
   showToast('Plačilo vpisano!');
+  if (state.reportCache) delete state.reportCache[`${data.period_year}-${data.period_month}`];
   if (document.getElementById('view-report').classList.contains('active')) loadReport();
   loadMemberPaymentsTab(data.member_id);
   refreshMemberState(data.member_id);

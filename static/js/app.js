@@ -229,6 +229,7 @@ async function deleteMember(mid, name) {
   await api(`/api/members/${mid}`,'DELETE'); showToast('Član odstranjen.'); loadMembers();
 }
 async function showMemberModal(id) {
+  openModal('modal-member');
   const [groups, settings] = await Promise.all([
     state.groups.length ? Promise.resolve(state.groups) : api('/api/groups'),
     state.priceTiers ? Promise.resolve(state.priceTiers) : api('/api/settings')
@@ -256,7 +257,6 @@ async function showMemberModal(id) {
     }
   }
   updateMemberPricePreview();
-  openModal('modal-member');
 }
 function updateMemberPricePreview() {
   const checked = [...document.querySelectorAll('#member-groups-check input:checked')].map(cb=>cb.value);
@@ -1301,11 +1301,15 @@ document.querySelectorAll('.nav-links a').forEach(a => {
 
 loadDashboard();
 
-// Prefetch current month billing in background so report opens instantly
+// Prefetch settings + current month billing in background
 (async () => {
-  const now = new Date();
-  const year = now.getFullYear(), month = now.getMonth() + 1;
   try {
+    const [settings] = await Promise.all([api('/api/settings')]);
+    state.priceTiers = settings;
+  } catch(e) {}
+  try {
+    const now = new Date();
+    const year = now.getFullYear(), month = now.getMonth() + 1;
     const data = await api(`/api/billing/${year}/${month}`);
     if (!state.reportCache) state.reportCache = {};
     state.reportCache[`${year}-${month}`] = data;
